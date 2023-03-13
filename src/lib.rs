@@ -4,14 +4,10 @@ use bevy::{
         warn, AddAsset, AssetServer, Assets, Commands, Component, Entity, Handle, Query, Res,
         ResMut, Resource,
     },
-    reflect::TypeUuid,
     utils::synccell::SyncCell,
 };
-use kira::{
-    manager::{backend::cpal::CpalBackend, AudioManager, AudioManagerSettings},
-    sound::SoundData,
-};
-use static_sound_loader::{SoundAsset, StaticSoundAsset, StaticSoundFileLoader};
+use kira::manager::{backend::cpal::CpalBackend, AudioManager, AudioManagerSettings};
+use static_sound_loader::{StaticSoundAsset, StaticSoundFileLoader};
 
 mod err;
 mod static_sound_loader;
@@ -52,13 +48,11 @@ impl KiraContext {
         None
     }
 
-    pub fn play_asset<T: SoundData + Clone + Send + Sync + 'static>(
+    pub fn play_static_sound(
         &mut self,
-        assets: &Assets<SoundAsset<T>>,
-        handle: &Handle<SoundAsset<T>>,
-    ) where
-        SoundAsset<T>: TypeUuid,
-    {
+        assets: &Assets<StaticSoundAsset>,
+        handle: &Handle<StaticSoundAsset>,
+    ) {
         if let Some(sound_asset) = assets.get(&handle) {
             let manager = self.get_manager().unwrap();
             let _ = manager.play(sound_asset.sound.clone());
@@ -96,7 +90,7 @@ fn play_sys(
         if assets.get(&to_play.0).is_none() {
             continue;
         }
-        kira.play_asset(&assets, &to_play.0);
+        kira.play_static_sound(&assets, &to_play.0);
         commands.entity(eid).despawn();
     }
 }
