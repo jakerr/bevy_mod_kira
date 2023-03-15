@@ -1,12 +1,18 @@
 use bevy::{
     app::Plugin,
     prelude::{
-        warn, AddAsset, AssetServer, Assets, Commands, Component, Entity, Handle, Query, Res,
-        ResMut, Resource,
+        warn, AddAsset, AssetServer, Assets, Commands, Component, Entity, Handle, Local, Query,
+        Res, ResMut, Resource,
     },
+    time::{Time, Timer},
     utils::synccell::SyncCell,
 };
-use kira::manager::{backend::cpal::CpalBackend, AudioManager, AudioManagerSettings};
+use kira::{
+    manager::{
+        backend::cpal::CpalBackend, error::PlaySoundError, AudioManager, AudioManagerSettings,
+    },
+    sound::static_sound::{StaticSoundData, StaticSoundHandle},
+};
 use static_sound_loader::{StaticSoundAsset, StaticSoundFileLoader};
 
 mod err;
@@ -17,6 +23,11 @@ pub struct KiraContext {
     manager: Option<SyncCell<AudioManager>>,
 }
 
+#[derive(Component)]
+pub struct KiraSoundHandle(Handle<StaticSoundAsset>);
+#[derive(Component)]
+pub struct KiraSoundController(StaticSoundHandle);
+
 impl Default for KiraContext {
     fn default() -> Self {
         let manager = AudioManager::<CpalBackend>::new(AudioManagerSettings::default());
@@ -24,7 +35,7 @@ impl Default for KiraContext {
             warn!("Error creating KiraContext: {}", error);
         }
         Self {
-            manager: manager.ok().map(|m| SyncCell::new(m)),
+            manager: manager.ok().map(SyncCell::new),
         }
     }
 }
@@ -40,23 +51,25 @@ impl KiraContext {
         }
     }
 
+    // Takes the same params as AudioManager::play calls the internal manager and then converts the handle into a bevy component type.
+    pub fn play(
+        &mut self,
+        sound: StaticSoundData,
+    ) -> Result<KiraSoundController, PlaySoundError<()>> {
+        if let Some(manager) = &mut self.manager {
+            let exclusive_manager = manager.get();
+            exclusive_manager.play(sound).map(KiraSoundController)
+        } else {
+            Err(PlaySoundError::IntoSoundError(()))
+        }
+    }
+
     pub fn get_manager(&mut self) -> Option<&mut AudioManager> {
         if let Some(manager) = &mut self.manager {
             let exclusive_manager = manager.get();
             return Some(exclusive_manager);
         }
         None
-    }
-
-    pub fn play_static_sound(
-        &mut self,
-        assets: &Assets<StaticSoundAsset>,
-        handle: &Handle<StaticSoundAsset>,
-    ) {
-        if let Some(sound_asset) = assets.get(&handle) {
-            let manager = self.get_manager().unwrap();
-            let _ = manager.play(sound_asset.sound.clone());
-        }
     }
 }
 
@@ -72,25 +85,43 @@ impl Plugin for KiraPlugin {
     }
 }
 
-#[derive(Component)]
-struct ToPlay(Handle<StaticSoundAsset>);
-
 fn setup_sys(mut commands: Commands, loader: Res<AssetServer>) {
     let a = loader.load("sfx.ogg");
-    commands.spawn(ToPlay(a));
+    commands.spawn(KiraSoundHandle(a));
+}
+
+struct Looper {
+    timer: Timer,
+}
+
+impl Default for Looper {
+    fn default() -> Self {
+        Self {
+            timer: Timer::from_seconds(10.0, bevy::time::TimerMode::Repeating),
+        }
+    }
 }
 
 fn play_sys(
     mut commands: Commands,
     mut kira: ResMut<KiraContext>,
     assets: Res<Assets<StaticSoundAsset>>,
-    query: Query<(Entity, &ToPlay)>,
+    query: Query<(Entity, &KiraSoundHandle)>,
+    time: Res<Time>,
+    mut looper: Local<Looper>,
 ) {
-    for (eid, to_play) in query.iter() {
-        if assets.get(&to_play.0).is_none() {
+    looper.timer.tick(time.delta());
+    if !looper.timer.just_finished() {
+        return;
+    }
+    for (eid, sound_handle) in query.iter() {
+        if assets.get(&sound_handle.0).is_none() {
             continue;
         }
-        kira.play_static_sound(&assets, &to_play.0);
-        commands.entity(eid).despawn();
+        if let Some(sound_asset) = assets.get(&sound_handle.0) {
+            let s = kira.play(sound_asset.sound.clone()).unwrap();
+            commands.entity(eid).remove::<KiraSoundController>();
+            commands.entity(eid).insert(s);
+        }
     }
 }
