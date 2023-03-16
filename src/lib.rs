@@ -2,7 +2,9 @@ use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::time::Duration;
 
+use bevy::prelude::debug;
 use bevy::prelude::info;
+use bevy::reflect::Reflect;
 use bevy::{
     app::Plugin,
     prelude::{
@@ -12,6 +14,7 @@ use bevy::{
     time::{Time, Timer},
     utils::synccell::SyncCell,
 };
+use kira::sound::static_sound::PlaybackState;
 use kira::{
     manager::{
         backend::cpal::CpalBackend, error::PlaySoundError, AudioManager, AudioManagerSettings,
@@ -31,8 +34,17 @@ pub struct KiraContext {
 
 #[derive(Component)]
 pub struct KiraSoundHandle(Handle<StaticSoundAsset>);
-#[derive(Component)]
-pub struct KiraSoundController(StaticSoundHandle);
+#[derive(Component, Default, Reflect)]
+#[reflect(Debug)]
+pub struct KiraActiveSounds(#[reflect(ignore)] Vec<StaticSoundHandle>);
+
+impl Debug for KiraActiveSounds {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KiraActiveSounds")
+            .field("len", &self.0.len())
+            .finish()
+    }
+}
 
 impl Default for KiraContext {
     fn default() -> Self {
@@ -61,10 +73,10 @@ impl KiraContext {
     pub fn play(
         &mut self,
         sound: StaticSoundData,
-    ) -> Result<KiraSoundController, PlaySoundError<()>> {
+    ) -> Result<StaticSoundHandle, PlaySoundError<()>> {
         if let Some(manager) = &mut self.manager {
             let exclusive_manager = manager.get();
-            exclusive_manager.play(sound).map(KiraSoundController)
+            exclusive_manager.play(sound)
         } else {
             Err(PlaySoundError::IntoSoundError(()))
         }
@@ -88,8 +100,9 @@ impl Plugin for KiraPlugin {
             .add_asset_loader(StaticSoundFileLoader)
             .add_startup_system(setup_sys)
             .add_system(play_sys)
-            .add_system(tweak_mod_sys)
+            // .add_system(tweak_mod_sys)
             .add_system(debug_kira_sys);
+        app.register_type::<KiraActiveSounds>();
     }
 }
 
@@ -115,28 +128,45 @@ fn play_sys(
     mut commands: Commands,
     mut kira: ResMut<KiraContext>,
     assets: Res<Assets<StaticSoundAsset>>,
-    query: Query<(Entity, &KiraSoundHandle)>,
+    mut query: Query<(Entity, &KiraSoundHandle, Option<&mut KiraActiveSounds>)>,
     time: Res<Time>,
-    mut looper: Local<TimerMs<5000>>,
+    mut looper: Local<TimerMs<2000>>,
 ) {
     looper.timer.tick(time.delta());
     if !looper.timer.just_finished() {
         return;
     }
-    for (eid, sound_handle) in query.iter() {
+    for (eid, sound_handle, mut active_sounds) in query.iter_mut() {
         if assets.get(&sound_handle.0).is_none() {
             continue;
         }
         if let Some(sound_asset) = assets.get(&sound_handle.0) {
-            let s = kira.play(sound_asset.sound.clone()).unwrap();
-            commands.entity(eid).remove::<KiraSoundController>();
-            commands.entity(eid).insert(s);
+            let s1 = kira.play(sound_asset.sound.clone()).unwrap();
+            let s2 = kira.play(sound_asset.sound.clone()).unwrap();
+            match &mut active_sounds {
+                Some(sounds) => {
+                    sounds.0.push(s1);
+                    sounds.0.push(s2);
+                }
+                None => {
+                    let mut new_sounds = KiraActiveSounds::default();
+                    new_sounds.0.push(s1);
+                    new_sounds.0.push(s2);
+                    commands.entity(eid).insert(new_sounds);
+                }
+            };
+        }
+        // Clean up any sounds in active_sounds that are no longer playing.
+        if let Some(mut active_sounds) = active_sounds {
+            active_sounds
+                .0
+                .retain(|sound| sound.state() != PlaybackState::Stopped);
         }
     }
 }
 
 fn tweak_mod_sys(
-    mut query: Query<&mut KiraSoundController>,
+    mut query: Query<&mut KiraActiveSounds>,
     time: Res<Time>,
     mut mod_wheel: Local<TimerMs<300>>,
 ) {
@@ -144,11 +174,13 @@ fn tweak_mod_sys(
     if !mod_wheel.timer.just_finished() {
         return;
     }
-    for mut controller in query.iter_mut() {
-        let _ = controller.0.set_panning(
-            (time.elapsed_seconds_wrapped_f64() * 3.0).sin(),
-            Tween::default(),
-        );
+    for mut active_sound_vec in query.iter_mut() {
+        for active_sound in &mut active_sound_vec.0 {
+            let _ = active_sound.set_panning(
+                (time.elapsed_seconds_wrapped_f64() * 3.0).sin(),
+                Tween::default(),
+            );
+        }
     }
 }
 
@@ -198,6 +230,7 @@ impl<'a> From<&'a mut KiraContext> for DebugKiraContext<'a> {
 
 fn debug_kira_sys(
     mut kira: ResMut<KiraContext>,
+    active: Query<(Entity, &KiraActiveSounds)>,
     time: Res<Time>,
     mut looper: Local<TimerMs<1000>>,
 ) {
@@ -206,5 +239,8 @@ fn debug_kira_sys(
         return;
     }
     let context: DebugKiraContext = kira.as_mut().into();
-    info!("{:?}", context);
+    for (eid, active) in active.iter() {
+        debug!("Eid: {:?} has {} active sounds.", eid, active.0.len());
+    }
+    debug!("Context: {:?}", context);
 }
