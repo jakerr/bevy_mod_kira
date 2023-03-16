@@ -46,6 +46,12 @@ pub struct PlaySoundEvent<D: SoundData = StaticSoundData> {
     sound: D,
 }
 
+impl PlaySoundEvent {
+    pub fn new(entity: Entity, sound: StaticSoundData) -> Self {
+        Self { entity, sound }
+    }
+}
+
 impl Debug for KiraActiveSounds {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("KiraActiveSounds")
@@ -151,10 +157,7 @@ fn trigger_play_sys(
             continue;
         }
         if let Some(sound_asset) = assets.get(&sound_handle.0) {
-            ev_play.send(PlaySoundEvent {
-                entity: eid,
-                sound: sound_asset.sound.clone(),
-            });
+            ev_play.send(PlaySoundEvent::new(eid, sound_asset.sound.clone()));
         }
     }
 }
