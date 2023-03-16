@@ -173,9 +173,7 @@ fn do_play_sys(
                     sounds.0.push(s1);
                 }
                 None => {
-                    let mut new_sounds = KiraActiveSounds::default();
-                    new_sounds.0.push(s1);
-                    commands.entity(eid).insert(new_sounds);
+                    commands.entity(eid).insert(KiraActiveSounds(vec![s1]));
                 }
             };
         }
