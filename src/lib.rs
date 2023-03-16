@@ -3,7 +3,9 @@ use std::fmt::Formatter;
 use std::time::Duration;
 
 use bevy::prelude::debug;
-use bevy::prelude::info;
+
+use bevy::prelude::EventReader;
+use bevy::prelude::EventWriter;
 use bevy::reflect::Reflect;
 use bevy::{
     app::Plugin,
@@ -15,6 +17,7 @@ use bevy::{
     utils::synccell::SyncCell,
 };
 use kira::sound::static_sound::PlaybackState;
+use kira::sound::SoundData;
 use kira::{
     manager::{
         backend::cpal::CpalBackend, error::PlaySoundError, AudioManager, AudioManagerSettings,
@@ -37,6 +40,11 @@ pub struct KiraSoundHandle(Handle<StaticSoundAsset>);
 #[derive(Component, Default, Reflect)]
 #[reflect(Debug)]
 pub struct KiraActiveSounds(#[reflect(ignore)] Vec<StaticSoundHandle>);
+
+pub struct PlaySoundEvent<D: SoundData = StaticSoundData> {
+    entity: Entity,
+    sound: D,
+}
 
 impl Debug for KiraActiveSounds {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -96,10 +104,13 @@ pub struct KiraPlugin;
 impl Plugin for KiraPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         app.init_resource::<KiraContext>()
+            .add_event::<PlaySoundEvent<StaticSoundData>>()
             .add_asset::<StaticSoundAsset>()
             .add_asset_loader(StaticSoundFileLoader)
             .add_startup_system(setup_sys)
-            .add_system(play_sys)
+            .add_system(trigger_play_sys)
+            .add_system(do_play_sys)
+            .add_system(cleanup_inactive_sounds_sys)
             // .add_system(tweak_mod_sys)
             .add_system(debug_kira_sys);
         app.register_type::<KiraActiveSounds>();
@@ -124,41 +135,66 @@ impl<const N: i32> Default for TimerMs<N> {
     }
 }
 
-fn play_sys(
-    mut commands: Commands,
-    mut kira: ResMut<KiraContext>,
+fn trigger_play_sys(
     assets: Res<Assets<StaticSoundAsset>>,
-    mut query: Query<(Entity, &KiraSoundHandle, Option<&mut KiraActiveSounds>)>,
+    mut query: Query<(Entity, &KiraSoundHandle)>,
     time: Res<Time>,
-    mut looper: Local<TimerMs<2000>>,
+    mut looper: Local<TimerMs<1000>>,
+    mut ev_play: EventWriter<PlaySoundEvent>,
 ) {
     looper.timer.tick(time.delta());
     if !looper.timer.just_finished() {
         return;
     }
-    for (eid, sound_handle, mut active_sounds) in query.iter_mut() {
+    for (eid, sound_handle) in query.iter_mut() {
         if assets.get(&sound_handle.0).is_none() {
             continue;
         }
         if let Some(sound_asset) = assets.get(&sound_handle.0) {
-            let s1 = kira.play(sound_asset.sound.clone()).unwrap();
-            let s2 = kira.play(sound_asset.sound.clone()).unwrap();
-            match &mut active_sounds {
-                Some(sounds) => {
+            ev_play.send(PlaySoundEvent {
+                entity: eid,
+                sound: sound_asset.sound.clone(),
+            });
+        }
+    }
+}
+
+fn do_play_sys(
+    mut commands: Commands,
+    mut kira: ResMut<KiraContext>,
+    mut query: Query<(Entity, Option<&mut KiraActiveSounds>)>,
+    mut ev_play: EventReader<PlaySoundEvent>,
+) {
+    for event in ev_play.iter() {
+        let s1 = kira.play(event.sound.clone()).unwrap();
+        if let Ok((eid, active_sounds)) = query.get_mut(event.entity) {
+            match active_sounds {
+                Some(mut sounds) => {
                     sounds.0.push(s1);
-                    sounds.0.push(s2);
                 }
                 None => {
                     let mut new_sounds = KiraActiveSounds::default();
                     new_sounds.0.push(s1);
-                    new_sounds.0.push(s2);
                     commands.entity(eid).insert(new_sounds);
                 }
             };
         }
-        // Clean up any sounds in active_sounds that are no longer playing.
-        if let Some(mut active_sounds) = active_sounds {
-            active_sounds
+    }
+}
+
+fn cleanup_inactive_sounds_sys(mut query: Query<&mut KiraActiveSounds>) {
+    for mut sounds in query.iter_mut() {
+        // first check for at least one stopped sound before deref mut to avoid spurious change
+        // notifications notification. This is not yet profiled so may be a premature optimization.
+        // note that `any` is short-circuiting so we don't need to worry about the cost iterating
+        // over every sound.
+        let needs_cleanup = sounds
+            .0
+            .iter()
+            .any(|sound| sound.state() == PlaybackState::Stopped);
+
+        if needs_cleanup {
+            sounds
                 .0
                 .retain(|sound| sound.state() != PlaybackState::Stopped);
         }
