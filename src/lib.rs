@@ -139,7 +139,7 @@ fn trigger_play_sys(
     assets: Res<Assets<StaticSoundAsset>>,
     mut query: Query<(Entity, &KiraSoundHandle)>,
     time: Res<Time>,
-    mut looper: Local<TimerMs<1000>>,
+    mut looper: Local<TimerMs<5000>>,
     mut ev_play: EventWriter<PlaySoundEvent>,
 ) {
     looper.timer.tick(time.delta());
@@ -182,8 +182,11 @@ fn do_play_sys(
     }
 }
 
-fn cleanup_inactive_sounds_sys(mut query: Query<&mut KiraActiveSounds>) {
-    for mut sounds in query.iter_mut() {
+fn cleanup_inactive_sounds_sys(
+    mut commands: Commands,
+    mut query: Query<(Entity, &mut KiraActiveSounds)>,
+) {
+    for (eid, mut sounds) in query.iter_mut() {
         // first check for at least one stopped sound before deref mut to avoid spurious change
         // notifications notification. This is not yet profiled so may be a premature optimization.
         // note that `any` is short-circuiting so we don't need to worry about the cost iterating
@@ -197,6 +200,9 @@ fn cleanup_inactive_sounds_sys(mut query: Query<&mut KiraActiveSounds>) {
             sounds
                 .0
                 .retain(|sound| sound.state() != PlaybackState::Stopped);
+        }
+        if sounds.0.is_empty() {
+            commands.entity(eid).remove::<KiraActiveSounds>();
         }
     }
 }
