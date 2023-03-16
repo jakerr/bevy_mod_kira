@@ -5,13 +5,12 @@ use std::time::Duration;
 use bevy::prelude::debug;
 
 use bevy::prelude::EventReader;
-use bevy::prelude::EventWriter;
 use bevy::reflect::Reflect;
 use bevy::{
     app::Plugin,
     prelude::{
-        warn, AddAsset, AssetServer, Assets, Commands, Component, Entity, Handle, Local, Query,
-        Res, ResMut, Resource,
+        warn, AddAsset, AssetServer, Commands, Component, Entity, Handle, Local, Query, Res,
+        ResMut, Resource,
     },
     time::{Time, Timer},
     utils::synccell::SyncCell,
@@ -25,7 +24,7 @@ use kira::{
     sound::static_sound::{StaticSoundData, StaticSoundHandle},
     tween::Tween,
 };
-use static_sound_loader::{StaticSoundAsset, StaticSoundFileLoader};
+pub use static_sound_loader::{StaticSoundAsset, StaticSoundFileLoader};
 
 mod err;
 mod static_sound_loader;
@@ -36,7 +35,7 @@ pub struct KiraContext {
 }
 
 #[derive(Component)]
-pub struct KiraSoundHandle(Handle<StaticSoundAsset>);
+pub struct KiraSoundHandle(pub Handle<StaticSoundAsset>);
 #[derive(Component, Default, Reflect)]
 #[reflect(Debug)]
 pub struct KiraActiveSounds(#[reflect(ignore)] Vec<StaticSoundHandle>);
@@ -114,7 +113,6 @@ impl Plugin for KiraPlugin {
             .add_asset::<StaticSoundAsset>()
             .add_asset_loader(StaticSoundFileLoader)
             .add_startup_system(setup_sys)
-            .add_system(trigger_play_sys)
             .add_system(do_play_sys)
             .add_system(cleanup_inactive_sounds_sys)
             // .add_system(tweak_mod_sys)
@@ -137,27 +135,6 @@ impl<const N: i32> Default for TimerMs<N> {
     fn default() -> Self {
         Self {
             timer: Timer::from_seconds(N as f32 / 1000.0, bevy::time::TimerMode::Repeating),
-        }
-    }
-}
-
-fn trigger_play_sys(
-    assets: Res<Assets<StaticSoundAsset>>,
-    mut query: Query<(Entity, &KiraSoundHandle)>,
-    time: Res<Time>,
-    mut looper: Local<TimerMs<5000>>,
-    mut ev_play: EventWriter<PlaySoundEvent>,
-) {
-    looper.timer.tick(time.delta());
-    if !looper.timer.just_finished() {
-        return;
-    }
-    for (eid, sound_handle) in query.iter_mut() {
-        if assets.get(&sound_handle.0).is_none() {
-            continue;
-        }
-        if let Some(sound_asset) = assets.get(&sound_handle.0) {
-            ev_play.send(PlaySoundEvent::new(eid, sound_asset.sound.clone()));
         }
     }
 }
