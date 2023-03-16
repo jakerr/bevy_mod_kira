@@ -8,4 +8,5 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.69"
 bevy = "0.10.0"
+bevy-inspector-egui = "0.18.1"
 kira = "0.7.1"
