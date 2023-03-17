@@ -1,28 +1,34 @@
+
 use std::fmt::Debug;
 use std::fmt::Formatter;
-use std::time::Duration;
 
 use bevy::prelude::debug;
+use bevy::prelude::Events;
 
+use bevy::prelude::error;
 use bevy::prelude::EventReader;
 use bevy::reflect::Reflect;
 use bevy::{
     app::Plugin,
     prelude::{
-        warn, AddAsset, AssetServer, Commands, Component, Entity, Handle, Local, Query, Res,
-        ResMut, Resource,
+        warn, AddAsset, Commands, Component, Entity, Handle, Local, Query, Res, ResMut, Resource,
     },
     time::{Time, Timer},
     utils::synccell::SyncCell,
 };
 use kira::sound::static_sound::PlaybackState;
 use kira::sound::SoundData;
+
+
+use kira::track::TrackBuilder;
+use kira::track::TrackHandle;
+
+
 use kira::{
     manager::{
         backend::cpal::CpalBackend, error::PlaySoundError, AudioManager, AudioManagerSettings,
     },
     sound::static_sound::{StaticSoundData, StaticSoundHandle},
-    tween::Tween,
 };
 pub use static_sound_loader::{StaticSoundAsset, StaticSoundFileLoader};
 
@@ -38,16 +44,30 @@ pub struct KiraContext {
 pub struct KiraSoundHandle(pub Handle<StaticSoundAsset>);
 #[derive(Component, Default, Reflect)]
 #[reflect(Debug)]
-pub struct KiraActiveSounds(#[reflect(ignore)] Vec<StaticSoundHandle>);
+pub struct KiraActiveSounds(#[reflect(ignore)] pub Vec<StaticSoundHandle>);
+
+#[derive(Component, Default, Reflect)]
+pub struct KiraAssociatedTracks(#[reflect(ignore)] pub Vec<TrackHandle>);
 
 pub struct PlaySoundEvent<D: SoundData = StaticSoundData> {
     entity: Entity,
     sound: D,
 }
 
+pub struct AddTrackEvent {
+    entity: Entity,
+    track: TrackBuilder,
+}
+
 impl PlaySoundEvent {
     pub fn new(entity: Entity, sound: StaticSoundData) -> Self {
         Self { entity, sound }
+    }
+}
+
+impl AddTrackEvent {
+    pub fn new(entity: Entity, track: TrackBuilder) -> Self {
+        Self { entity, track }
     }
 }
 
@@ -112,19 +132,16 @@ impl Plugin for KiraPlugin {
             .add_event::<PlaySoundEvent<StaticSoundData>>()
             .add_asset::<StaticSoundAsset>()
             .add_asset_loader(StaticSoundFileLoader)
-            .add_startup_system(setup_sys)
+            // Track add events will not have automatic cleanup we need to manually consume them to
+            // take the internal track out of the event.
+            .init_resource::<Events<AddTrackEvent>>()
             .add_system(do_play_sys)
+            .add_system(do_add_track_sys)
             .add_system(cleanup_inactive_sounds_sys)
             // .add_system(tweak_mod_sys)
             .add_system(debug_kira_sys);
         app.register_type::<KiraActiveSounds>();
     }
-}
-
-fn setup_sys(mut commands: Commands, loader: Res<AssetServer>, mut time: ResMut<Time>) {
-    time.set_wrap_period(Duration::from_secs(10));
-    let a = loader.load("sfx.ogg");
-    commands.spawn(KiraSoundHandle(a));
 }
 
 struct TimerMs<const N: i32> {
@@ -146,16 +163,64 @@ fn do_play_sys(
     mut ev_play: EventReader<PlaySoundEvent>,
 ) {
     for event in ev_play.iter() {
-        let s1 = kira.play(event.sound.clone()).unwrap();
+        let sound_handle = match kira.play(event.sound.clone()) {
+            Ok(s) => s,
+            Err(e) => {
+                error!("Error playing sound: {}", e);
+                continue;
+            }
+        };
         if let Ok((eid, active_sounds)) = query.get_mut(event.entity) {
             match active_sounds {
                 Some(mut sounds) => {
-                    sounds.0.push(s1);
+                    sounds.0.push(sound_handle);
                 }
                 None => {
-                    commands.entity(eid).insert(KiraActiveSounds(vec![s1]));
+                    commands
+                        .entity(eid)
+                        .insert(KiraActiveSounds(vec![sound_handle]));
                 }
             };
+        } else {
+            error!(
+                "Failed to associate playing sound handle with entity: {:?}. \
+                 The handle will be dropped.",
+                event.entity
+            );
+        }
+    }
+}
+
+fn do_add_track_sys(
+    mut commands: Commands,
+    mut kira: ResMut<KiraContext>,
+    mut query: Query<(Entity, Option<&mut KiraAssociatedTracks>)>,
+    mut ev_add_track: ResMut<Events<AddTrackEvent>>,
+) {
+    // extract events so that we can take the track out of the event.
+    // let events = ev_add_track.iter().collect::<Vec<_>>();
+    for event in ev_add_track.drain() {
+        if let Some(manager) = kira.get_manager() {
+            if let Ok(track_handle) = manager.add_sub_track(event.track) {
+                if let Ok((eid, tracks)) = query.get_mut(event.entity) {
+                    match tracks {
+                        Some(mut sounds) => {
+                            sounds.0.push(track_handle);
+                        }
+                        None => {
+                            commands
+                                .entity(eid)
+                                .insert(KiraAssociatedTracks(vec![track_handle]));
+                        }
+                    };
+                } else {
+                    error!(
+                        "Failed to associate playing sound handle with entity: {:?}. \
+                 The handle will be dropped.",
+                        event.entity
+                    );
+                }
+            }
         }
     }
 }
@@ -181,25 +246,6 @@ fn cleanup_inactive_sounds_sys(
         }
         if sounds.0.is_empty() {
             commands.entity(eid).remove::<KiraActiveSounds>();
-        }
-    }
-}
-
-fn tweak_mod_sys(
-    mut query: Query<&mut KiraActiveSounds>,
-    time: Res<Time>,
-    mut mod_wheel: Local<TimerMs<300>>,
-) {
-    mod_wheel.timer.tick(time.delta());
-    if !mod_wheel.timer.just_finished() {
-        return;
-    }
-    for mut active_sound_vec in query.iter_mut() {
-        for active_sound in &mut active_sound_vec.0 {
-            let _ = active_sound.set_panning(
-                (time.elapsed_seconds_wrapped_f64() * 3.0).sin(),
-                Tween::default(),
-            );
         }
     }
 }
