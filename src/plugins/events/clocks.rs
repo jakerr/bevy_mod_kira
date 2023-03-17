@@ -37,6 +37,9 @@ pub(super) fn do_add_clock_sys(
     for event in ev_add_clock.drain() {
         if let Some(manager) = kira.get_manager() {
             if let Ok(clock_handle) = manager.add_clock(event.clock_speed) {
+                if clock_handle.start().is_err() {
+                    error!("Failed to start clock.");
+                }
                 if let Ok((eid, clocks)) = query.get_mut(event.entity) {
                     match clocks {
                         Some(mut clocks) => {

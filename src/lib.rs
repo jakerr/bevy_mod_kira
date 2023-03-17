@@ -25,8 +25,8 @@ impl Plugin for KiraPlugin {
         app.init_resource::<KiraContext>()
             .add_asset::<StaticSoundAsset>()
             .add_asset_loader(StaticSoundFileLoader)
-            .add_plugin(plugins::KiraEventsPlugin)
-            .add_plugin(plugins::KiraDebugPlugin);
+            .add_plugin(plugins::KiraEventsPlugin);
+        // .add_plugin(plugins::KiraDebugPlugin);
     }
 }
 
