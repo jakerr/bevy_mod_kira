@@ -1,19 +1,31 @@
+#![feature(split_array)]
+
+use std::sync::Arc;
+
 use bevy::{
     prelude::{
-        debug, error, warn, App, AssetServer, Assets, BuildChildren, Commands, Component, Entity,
-        EventWriter, Local, Parent, Query, Res,
+        debug, error, info, warn, App, AssetServer, Assets, BuildChildren, Children, Color,
+        Commands, Component, Entity, EventWriter, Local, Parent, Query, Res, With,
     },
     reflect::Reflect,
+    render::view::window,
     time::{Time, Timer},
     utils::HashMap,
     DefaultPlugins,
 };
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use bevy_egui::{
+    egui::{self, Pos2, Stroke},
+    EguiContexts, EguiPlugin,
+};
 use bevy_mod_kira::{
     AddClockEvent, AddTrackEvent, KiraAssociatedClocks, KiraAssociatedTracks, KiraPlugin,
     KiraSoundHandle, PlaySoundEvent, StaticSoundAsset,
 };
-use kira::track::{effect::reverb::ReverbHandle, TrackBuilder};
+use egui::Color32;
+use egui::Id;
+use egui::Sense;
+use egui_extras::{Size, StripBuilder};
+use kira::track::{effect::reverb::ReverbHandle, TrackBuilder, TrackHandle};
 
 const BPM: f64 = 110.0;
 const BPS: f64 = BPM / 60.0;
@@ -34,9 +46,12 @@ pub fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugin(KiraPlugin)
-        .add_plugin(WorldInspectorPlugin::new())
+        // .add_plugin(WorldInspectorPlugin::new())
+        // Already included by WorldInspectorPlugin above.
+        .add_plugin(EguiPlugin)
         .add_startup_system(setup_sys)
         .add_system(playback_sys)
+        .add_system(ui_sys)
         .register_type::<TrackOneReverb>()
         .run();
 }
@@ -94,6 +109,15 @@ fn setup_sys(
                 x, o, x, o,
             ],
         });
+        #[rustfmt::skip]
+        parent.spawn(DrumPattern {
+            steps: [
+                o, o, o, o,
+                o, o, o, o,
+                o, o, o, o,
+                o, o, x, x,
+            ],
+        });
     });
 }
 
@@ -147,4 +171,190 @@ fn playback_sys(
             }
         }
     }
+}
+
+fn ui_sys(
+    mut ctx: EguiContexts,
+    mut clocks: Query<&mut KiraAssociatedClocks>,
+    mut tracks: Query<&mut KiraAssociatedTracks>,
+    parents: Query<&Children, With<KiraAssociatedTracks>>,
+    mut patterns: Query<(Entity, &mut DrumPattern)>,
+) {
+    let mut first_clock = clocks.iter_mut().next();
+    let clock = first_clock.as_mut().map(|c| &mut c.0[0]);
+    egui::TopBottomPanel::top("top").show(ctx.ctx_mut(), |ui| {
+        // The top panel is often a good place for a menu bar:
+        egui::menu::bar(ui, |ui| {
+            egui::menu::menu_button(ui, "File", |ui| {
+                if let Some(clock) = clock {
+                    if clock.ticking() {
+                        if ui.button("Pause").clicked() {
+                            info!("Clicked Pause");
+                            let _ = clock.pause();
+                        }
+                    } else if ui.button("Start").clicked() {
+                        let _ = clock.start();
+                    }
+                }
+            });
+        });
+    });
+    egui::CentralPanel::default().show(ctx.ctx_mut(), |ui| {
+        ui.heading("Bevy Mod Kira - Drum Machine Example");
+        ui.hyperlink("https://github.com/emilk/egui_template");
+        ui.add(egui::github_link_file_line!(
+            "https://github.com/mvlabat/bevy_egui/blob/main/",
+            "Direct link to source code."
+        ));
+        egui::warn_if_debug_build(ui);
+
+        ui.separator();
+
+        ui.heading("Central Panel");
+        ui.label("The central panel the region left after adding TopPanel's and SidePanel's");
+        ui.label("It is often a great place for big things, like drawings:");
+        // strip_ui(ui, &mut pattern.single_mut());
+        if tracks.iter().next().is_none() {
+            ui.label("No tracks found.");
+            return;
+        }
+        // Visit tracks patterns in order.
+        for parent in parents.iter() {
+            for (i, child) in parent.iter().enumerate() {
+                if let Ok((eid, mut pattern)) = patterns.get_mut(*child) {
+                    channel_view(
+                        ui,
+                        "♪",
+                        "drum",
+                        0,
+                        i,
+                        &mut tracks.single_mut(),
+                        &mut pattern,
+                    );
+                }
+            }
+        }
+    });
+}
+
+fn faded_color(dark_mode: bool, window_color: Color32, color: Color32) -> Color32 {
+    use egui::Rgba;
+    let t = if dark_mode { 0.95 } else { 0.8 };
+    egui::lerp(Rgba::from(color)..=Rgba::from(window_color), t).into()
+}
+
+fn channel_view(
+    ui: &mut egui::Ui,
+    icon: &str,
+    title: &str,
+    track_id: usize,
+    pattern: usize,
+    tracks: &KiraAssociatedTracks,
+    drum_pattern: &mut DrumPattern,
+) {
+    let dark_mode = ui.visuals().dark_mode;
+    let window_color = ui.visuals().window_fill();
+    let faded = |color: Color32| -> Color32 { faded_color(dark_mode, window_color, color) };
+    let extra_faded =
+        |color: Color32| -> Color32 { faded_color(dark_mode, window_color, faded(color)) };
+    StripBuilder::new(ui)
+        .size(Size::exact(96.0))
+        .vertical(|mut strip| {
+            strip.strip(|builder| {
+                builder
+                    .size(Size::exact(64.0))
+                    .size(Size::exact(64.0))
+                    .size(Size::exact(128.0))
+                    .size(Size::exact(128.0))
+                    .size(Size::exact(128.0))
+                    .size(Size::exact(128.0))
+                    .horizontal(|mut strip| {
+                        strip.cell(|mut ui| {
+                            channel_title_view(&mut ui, icon, title);
+                        });
+                        strip.cell(|mut ui| {
+                            track_selector_view(&mut ui, track_id, tracks, drum_pattern);
+                        });
+                        let steps = &mut drum_pattern.steps[..];
+                        for beat in 0..4 {
+                            strip.cell(|mut ui| {
+                                let base_color = if beat % 2 == 0 {
+                                    Color32::GOLD
+                                } else {
+                                    Color32::LIGHT_RED
+                                };
+                                let (_, tail) = steps.split_at_mut(beat * 4);
+                                let (this_beat, _) = tail.split_array_mut();
+                                beat_view(
+                                    &mut ui,
+                                    faded(base_color),
+                                    extra_faded(base_color),
+                                    pattern,
+                                    beat,
+                                    this_beat,
+                                );
+                            });
+                        }
+                    });
+            });
+        });
+}
+
+fn channel_title_view(ui: &mut egui::Ui, icon: &str, title: &str) {
+    ui.painter().rect_filled(
+        ui.available_rect_before_wrap().shrink(1.0),
+        0.0,
+        Color32::DARK_GREEN,
+    );
+    ui.label(format!("{} {}", icon, title));
+}
+
+fn track_selector_view(
+    ui: &mut egui::Ui,
+    track_id: usize,
+    tracks: &KiraAssociatedTracks,
+    drum_pattern: &mut DrumPattern,
+) {
+    ui.painter().rect_filled(
+        ui.available_rect_before_wrap().shrink(1.0),
+        0.0,
+        Color32::YELLOW,
+    );
+}
+
+fn beat_view(
+    ui: &mut egui::Ui,
+    on_color: Color32,
+    off_color: Color32,
+    pattern: usize,
+    beat: usize,
+    steps: &mut [bool; 4],
+) {
+    ui.columns(4, |columns| {
+        debug!("beat_view: beat={}, steps={:?}", beat, steps);
+        for (i, ui) in columns.iter_mut().enumerate() {
+            let id = Id::new("drum_step").with((pattern, beat, i));
+            dbg!(id);
+            let target = ui.interact(ui.available_rect_before_wrap(), id, Sense::click());
+            ui.painter().rect_filled(
+                ui.available_rect_before_wrap().shrink(1.0),
+                0.0,
+                if steps[i] { on_color } else { off_color },
+            );
+            if target.clicked() {
+                steps[i] = !steps[i];
+            }
+        }
+        debug!("beat_view end: beat={}, steps={:?}", beat, steps);
+    });
+    let rect = ui.available_rect_before_wrap();
+    let r = rect.right() + 4.0;
+    let t = rect.top() + 15.0;
+    let b = rect.bottom() - 15.0;
+    let right_top = Pos2::new(r, t);
+    let right_bottom = Pos2::new(r, b);
+    ui.painter().line_segment(
+        [right_top, right_bottom],
+        Stroke::new(1.0, Color32::DARK_GRAY),
+    );
 }
