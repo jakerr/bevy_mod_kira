@@ -1,15 +1,11 @@
 #![feature(split_array)]
 
-use std::sync::Arc;
-
 use bevy::{
     prelude::{
-        debug, error, info, warn, App, AssetServer, Assets, BuildChildren, Children, Color,
-        Commands, Component, Entity, EventWriter, Local, Parent, Query, Res, With,
+        debug, error, warn, App, AssetServer, Assets, BuildChildren, Children, Commands, Component,
+        Entity, EventWriter, Local, Parent, Query, Res, With,
     },
     reflect::Reflect,
-    render::view::window,
-    time::{Time, Timer},
     utils::HashMap,
     DefaultPlugins,
 };
@@ -26,7 +22,7 @@ use egui::Id;
 use egui::Sense;
 use egui_extras::{Size, StripBuilder};
 use kira::{
-    track::{effect::reverb::ReverbHandle, TrackBuilder, TrackHandle},
+    track::{effect::reverb::ReverbHandle, TrackBuilder},
     tween::Tween,
 };
 
@@ -61,8 +57,6 @@ pub fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugin(KiraPlugin)
-        // .add_plugin(WorldInspectorPlugin::new())
-        // Already included by WorldInspectorPlugin above.
         .add_plugin(EguiPlugin)
         .add_startup_system(setup_sys)
         .add_system(playback_sys)
@@ -71,20 +65,8 @@ pub fn main() {
         .run();
 }
 
-struct TimerMs<const N: u32> {
-    timer: Timer,
-}
-
 #[derive(Component, Reflect)]
 struct TrackOneReverb(#[reflect(ignore)] ReverbHandle);
-
-impl<const N: u32> Default for TimerMs<N> {
-    fn default() -> Self {
-        Self {
-            timer: Timer::from_seconds(N as f32 / 1000.0, bevy::time::TimerMode::Repeating),
-        }
-    }
-}
 
 fn setup_sys(
     mut commands: Commands,
@@ -148,15 +130,9 @@ fn playback_sys(
         &KiraAssociatedClocks,
     )>,
     patterns: Query<(Entity, &DrumPattern, &Parent)>,
-    time: Res<Time>,
-    // mut looper: Local<TimerMs<PLAYHEAD_RESOLUTION_MS>>,
     mut ev_play: EventWriter<PlaySoundEvent>,
     mut last_ticks: Local<LastTicks>,
 ) {
-    // looper.timer.tick(time.delta());
-    // if !looper.timer.just_finished() {
-    //     return;
-    // }
     for (pattern_id, pattern, parent) in patterns.iter() {
         if let Ok((sound, tracks, clocks)) = tracks.get(parent.get()) {
             let clock = clocks.0.first().unwrap();
@@ -269,7 +245,7 @@ fn ui_sys(
                         // Visit tracks patterns in order.
                         for parent in parents.iter() {
                             for (i, child) in parent.iter().enumerate() {
-                                if let Ok((eid, mut pattern)) = patterns.get_mut(*child) {
+                                if let Ok((_eid, mut pattern)) = patterns.get_mut(*child) {
                                     channel_view(
                                         ui,
                                         "♪",
@@ -366,9 +342,9 @@ fn channel_title_view(ui: &mut egui::Ui, icon: &str, title: &str) {
 
 fn track_selector_view(
     ui: &mut egui::Ui,
-    track_id: usize,
-    tracks: &KiraAssociatedTracks,
-    drum_pattern: &mut DrumPattern,
+    _track_id: usize,
+    _tracks: &KiraAssociatedTracks,
+    _drum_pattern: &mut DrumPattern,
 ) {
     ui.painter().rect_filled(
         ui.available_rect_before_wrap().shrink(1.0),
