@@ -9,7 +9,6 @@ use bevy::{
     time::{Time, Timer},
     DefaultPlugins,
 };
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_mod_kira::{
     AddTrackEvent, KiraAssociatedTracks, KiraPlugin, KiraSoundHandle, PlaySoundEvent,
     StaticSoundAsset,
@@ -23,7 +22,6 @@ pub fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugin(KiraPlugin)
-        .add_plugin(WorldInspectorPlugin::new())
         .add_startup_system(setup_sys)
         .add_system(setup_track_sys)
         .add_system(trigger_play_sys)

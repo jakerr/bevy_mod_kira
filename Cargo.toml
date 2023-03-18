@@ -8,6 +8,6 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.69"
 bevy = "0.10.0"
-kira = "0.7.1"
+kira = "0.7.2"
 bevy_egui = "0.20.1"
 egui_extras = "0.21.0"

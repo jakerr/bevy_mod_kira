@@ -14,7 +14,7 @@ use bevy::{
     DefaultPlugins,
 };
 use bevy_egui::{
-    egui::{self, Pos2, Stroke},
+    egui::{self, epaint::Hsva, Pos2, Rgba, Stroke},
     EguiContexts, EguiPlugin,
 };
 use bevy_mod_kira::{
@@ -25,13 +25,25 @@ use egui::Color32;
 use egui::Id;
 use egui::Sense;
 use egui_extras::{Size, StripBuilder};
-use kira::track::{effect::reverb::ReverbHandle, TrackBuilder, TrackHandle};
+use kira::{
+    track::{effect::reverb::ReverbHandle, TrackBuilder, TrackHandle},
+    tween::Tween,
+};
 
 const BPM: f64 = 110.0;
 const BPS: f64 = BPM / 60.0;
 const STEP_PER_BEAT: usize = 4;
 const STEPS: usize = STEP_PER_BEAT * 4;
 const STEP_PER_SEC: f64 = BPS * STEP_PER_BEAT as f64;
+
+// Non const of the same as above for use in the UI.
+fn steps_per_sec(bpm: f64) -> f64 {
+    bpm / 60.0 * STEP_PER_BEAT as f64
+}
+
+fn bpm(steps_per_second: f64) -> f64 {
+    steps_per_second * 60.0 / STEP_PER_BEAT as f64
+}
 
 // We'll trigger a system to queue next sounds at this rate (in ms). We trigger at some division of
 // the clock tick rate so that we are sure that we are enqueueing the next step in time.
@@ -41,6 +53,9 @@ const PLAYHEAD_RESOLUTION_MS: u32 = ((1000.0 / STEP_PER_SEC) * 0.8) as u32;
 struct DrumPattern {
     steps: [bool; STEPS],
 }
+
+#[derive(Component, Reflect)]
+struct Bpm(f64);
 
 pub fn main() {
     App::new()
@@ -91,6 +106,7 @@ fn setup_sys(
         .stereo_width(0.0);
     let mut track = TrackBuilder::new();
     let reverb_handle = track.add_effect(reverb);
+    track_entity.insert(Bpm(BPM));
     track_entity.insert(TrackOneReverb(reverb_handle));
     ev_tracks.send(AddTrackEvent::new(track_entity.id(), track));
     ev_clocks.send(AddClockEvent::new(
@@ -133,14 +149,14 @@ fn playback_sys(
     )>,
     patterns: Query<(Entity, &DrumPattern, &Parent)>,
     time: Res<Time>,
-    mut looper: Local<TimerMs<PLAYHEAD_RESOLUTION_MS>>,
+    // mut looper: Local<TimerMs<PLAYHEAD_RESOLUTION_MS>>,
     mut ev_play: EventWriter<PlaySoundEvent>,
     mut last_ticks: Local<LastTicks>,
 ) {
-    looper.timer.tick(time.delta());
-    if !looper.timer.just_finished() {
-        return;
-    }
+    // looper.timer.tick(time.delta());
+    // if !looper.timer.just_finished() {
+    //     return;
+    // }
     for (pattern_id, pattern, parent) in patterns.iter() {
         if let Ok((sound, tracks, clocks)) = tracks.get(parent.get()) {
             let clock = clocks.0.first().unwrap();
@@ -173,74 +189,118 @@ fn playback_sys(
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum Pallete {
+    FreshGreen = 0x99dd55,
+    LeafGreen = 0x44dd88,
+    MintGreen = 0x22ccbb,
+    AquaBlue = 0x0099cc,
+    DeepBlue = 0x3366bb,
+    GrapePurple = 0x663399,
+}
+
+impl From<Pallete> for Rgba {
+    fn from(p: Pallete) -> Self {
+        let col = p as u32;
+        let r: u8 = ((col >> 16) & 0xff) as u8;
+        let g: u8 = ((col >> 8) & 0xff) as u8;
+        let b: u8 = (col & 0xff) as u8;
+        match p {
+            Pallete::AquaBlue => {
+                dbg!(p);
+                dbg!(r, g, b);
+            }
+            _ => {}
+        }
+        Rgba::from_srgba_unmultiplied(r, g, b, 255)
+        // Rgba::from_srgba_premultiplied(r, g, b, 255)
+    }
+}
+
+impl From<Pallete> for Color32 {
+    fn from(p: Pallete) -> Self {
+        let rgb: Rgba = p.into();
+        rgb.into()
+    }
+}
+
 fn ui_sys(
     mut ctx: EguiContexts,
     mut clocks: Query<&mut KiraAssociatedClocks>,
     mut tracks: Query<&mut KiraAssociatedTracks>,
+    mut bpm: Query<&mut Bpm>,
     parents: Query<&Children, With<KiraAssociatedTracks>>,
     mut patterns: Query<(Entity, &mut DrumPattern)>,
 ) {
     let mut first_clock = clocks.iter_mut().next();
     let clock = first_clock.as_mut().map(|c| &mut c.0[0]);
-    egui::TopBottomPanel::top("top").show(ctx.ctx_mut(), |ui| {
-        // The top panel is often a good place for a menu bar:
-        egui::menu::bar(ui, |ui| {
-            egui::menu::menu_button(ui, "File", |ui| {
-                if let Some(clock) = clock {
-                    if clock.ticking() {
-                        if ui.button("Pause").clicked() {
-                            info!("Clicked Pause");
-                            let _ = clock.pause();
-                        }
-                    } else if ui.button("Start").clicked() {
-                        let _ = clock.start();
-                    }
-                }
-            });
-        });
-    });
-    egui::CentralPanel::default().show(ctx.ctx_mut(), |ui| {
-        ui.heading("Bevy Mod Kira - Drum Machine Example");
-        ui.hyperlink("https://github.com/emilk/egui_template");
-        ui.add(egui::github_link_file_line!(
-            "https://github.com/mvlabat/bevy_egui/blob/main/",
-            "Direct link to source code."
-        ));
+    egui::CentralPanel::default().show(ctx.ctx_mut(), |mut ui| {
+        let bg_color: Color32 = dark_color(Pallete::DeepBlue);
         egui::warn_if_debug_build(ui);
-
-        ui.separator();
-
-        ui.heading("Central Panel");
-        ui.label("The central panel the region left after adding TopPanel's and SidePanel's");
-        ui.label("It is often a great place for big things, like drawings:");
-        // strip_ui(ui, &mut pattern.single_mut());
-        if tracks.iter().next().is_none() {
-            ui.label("No tracks found.");
-            return;
-        }
-        // Visit tracks patterns in order.
-        for parent in parents.iter() {
-            for (i, child) in parent.iter().enumerate() {
-                if let Ok((eid, mut pattern)) = patterns.get_mut(*child) {
-                    channel_view(
-                        ui,
-                        "♪",
-                        "drum",
-                        0,
-                        i,
-                        &mut tracks.single_mut(),
-                        &mut pattern,
-                    );
+        StripBuilder::new(&mut ui)
+            .size(Size::remainder())
+            .size(Size::exact(128.0 * 6.0))
+            .size(Size::remainder())
+            .horizontal(|mut strip| {
+                strip.empty();
+                if let Some(clock) = clock {
+                    let mut bpm = bpm.single_mut();
+                    strip.cell(|ui| {
+                        ui.label("BPM");
+                        ui.add(
+                            egui::Slider::new(&mut bpm.0, 1.0..=300.0)
+                                .text("BPM")
+                                .clamp_to_range(true),
+                        );
+                        let _ = clock.set_speed(
+                            kira::ClockSpeed::TicksPerSecond(steps_per_sec(bpm.0)),
+                            Tween::default(),
+                        );
+                        ui.painter().rect_filled(
+                            ui.available_rect_before_wrap().shrink(1.0),
+                            4.0,
+                            bg_color,
+                        );
+                        ui.separator();
+                        if tracks.iter().next().is_none() {
+                            ui.label("No tracks found.");
+                            return;
+                        }
+                        // Visit tracks patterns in order.
+                        for parent in parents.iter() {
+                            for (i, child) in parent.iter().enumerate() {
+                                if let Ok((eid, mut pattern)) = patterns.get_mut(*child) {
+                                    channel_view(
+                                        ui,
+                                        "♪",
+                                        "drum",
+                                        0,
+                                        i,
+                                        &mut tracks.single_mut(),
+                                        &mut pattern,
+                                    );
+                                }
+                            }
+                        }
+                    });
                 }
-            }
-        }
+                strip.empty();
+            });
     });
 }
 
-fn faded_color(dark_mode: bool, window_color: Color32, color: Color32) -> Color32 {
-    use egui::Rgba;
-    let t = if dark_mode { 0.95 } else { 0.8 };
-    egui::lerp(Rgba::from(color)..=Rgba::from(window_color), t).into()
+fn light_color(color: impl Into<Rgba>) -> Color32 {
+    let mut color = Hsva::from(color.into());
+    color.s = color.s * 0.8;
+    color.v = color.v * 0.70;
+    color.into()
+}
+
+fn dark_color(color: impl Into<Rgba>) -> Color32 {
+    let mut color = Hsva::from(color.into());
+    color.s = color.s * 0.35;
+    color.v = color.v * 0.10;
+    color.into()
 }
 
 fn channel_view(
@@ -252,13 +312,8 @@ fn channel_view(
     tracks: &KiraAssociatedTracks,
     drum_pattern: &mut DrumPattern,
 ) {
-    let dark_mode = ui.visuals().dark_mode;
-    let window_color = ui.visuals().window_fill();
-    let faded = |color: Color32| -> Color32 { faded_color(dark_mode, window_color, color) };
-    let extra_faded =
-        |color: Color32| -> Color32 { faded_color(dark_mode, window_color, faded(color)) };
     StripBuilder::new(ui)
-        .size(Size::exact(96.0))
+        .size(Size::exact(48.0))
         .vertical(|mut strip| {
             strip.strip(|builder| {
                 builder
@@ -278,17 +333,17 @@ fn channel_view(
                         let steps = &mut drum_pattern.steps[..];
                         for beat in 0..4 {
                             strip.cell(|mut ui| {
-                                let base_color = if beat % 2 == 0 {
-                                    Color32::GOLD
+                                let base_color: Rgba = if beat % 2 == 0 {
+                                    Pallete::FreshGreen.into()
                                 } else {
-                                    Color32::LIGHT_RED
+                                    Pallete::MintGreen.into()
                                 };
                                 let (_, tail) = steps.split_at_mut(beat * 4);
                                 let (this_beat, _) = tail.split_array_mut();
                                 beat_view(
                                     &mut ui,
-                                    faded(base_color),
-                                    extra_faded(base_color),
+                                    light_color(base_color),
+                                    dark_color(base_color),
                                     pattern,
                                     beat,
                                     this_beat,
@@ -303,8 +358,8 @@ fn channel_view(
 fn channel_title_view(ui: &mut egui::Ui, icon: &str, title: &str) {
     ui.painter().rect_filled(
         ui.available_rect_before_wrap().shrink(1.0),
-        0.0,
-        Color32::DARK_GREEN,
+        4.0,
+        dark_color(Pallete::LeafGreen),
     );
     ui.label(format!("{} {}", icon, title));
 }
@@ -317,8 +372,8 @@ fn track_selector_view(
 ) {
     ui.painter().rect_filled(
         ui.available_rect_before_wrap().shrink(1.0),
-        0.0,
-        Color32::YELLOW,
+        4.0,
+        dark_color(Pallete::AquaBlue),
     );
 }
 
@@ -331,21 +386,21 @@ fn beat_view(
     steps: &mut [bool; 4],
 ) {
     ui.columns(4, |columns| {
-        debug!("beat_view: beat={}, steps={:?}", beat, steps);
+        // debug!("beat_view: beat={}, steps={:?}", beat, steps);
         for (i, ui) in columns.iter_mut().enumerate() {
             let id = Id::new("drum_step").with((pattern, beat, i));
-            dbg!(id);
+            // dbg!(id);
             let target = ui.interact(ui.available_rect_before_wrap(), id, Sense::click());
             ui.painter().rect_filled(
                 ui.available_rect_before_wrap().shrink(1.0),
-                0.0,
+                4.0,
                 if steps[i] { on_color } else { off_color },
             );
             if target.clicked() {
                 steps[i] = !steps[i];
             }
         }
-        debug!("beat_view end: beat={}, steps={:?}", beat, steps);
+        // debug!("beat_view end: beat={}, steps={:?}", beat, steps);
     });
     let rect = ui.available_rect_before_wrap();
     let r = rect.right() + 4.0;
@@ -353,8 +408,10 @@ fn beat_view(
     let b = rect.bottom() - 15.0;
     let right_top = Pos2::new(r, t);
     let right_bottom = Pos2::new(r, b);
-    ui.painter().line_segment(
-        [right_top, right_bottom],
-        Stroke::new(1.0, Color32::DARK_GRAY),
-    );
+    if beat < 3 {
+        ui.painter().line_segment(
+            [right_top, right_bottom],
+            Stroke::new(1.0, Color32::DARK_GRAY),
+        );
+    }
 }
