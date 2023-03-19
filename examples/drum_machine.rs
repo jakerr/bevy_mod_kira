@@ -37,10 +37,6 @@ fn steps_per_sec(bpm: f64) -> f64 {
     bpm / 60.0 * STEP_PER_BEAT as f64
 }
 
-fn bpm(steps_per_second: f64) -> f64 {
-    steps_per_second * 60.0 / STEP_PER_BEAT as f64
-}
-
 // We'll trigger a system to queue next sounds at this rate (in ms). We trigger at some division of
 // the clock tick rate so that we are sure that we are enqueueing the next step in time.
 const PLAYHEAD_RESOLUTION_MS: u32 = ((1000.0 / STEP_PER_SEC) * 0.8) as u32;
@@ -200,6 +196,13 @@ impl From<Pallete> for Color32 {
     }
 }
 
+const CHANNEL_UI_SIZES: [f32; 6] = [64.0, 64.0, 128.0, 128.0, 128.0, 128.0];
+const MACHINE_H_PADDING: f32 = 32.0;
+
+fn container_size_for_cells(sizes: &[f32], padding: f32) -> f32 {
+    padding * (sizes.len() as f32 + 1.0) + sizes.iter().sum::<f32>()
+}
+
 fn ui_sys(
     mut ctx: EguiContexts,
     mut clocks: Query<&mut KiraAssociatedClocks>,
@@ -211,11 +214,13 @@ fn ui_sys(
     let mut first_clock = clocks.iter_mut().next();
     let clock = first_clock.as_mut().map(|c| &mut c.0[0]);
     egui::CentralPanel::default().show(ctx.ctx_mut(), |mut ui| {
-        let bg_color: Color32 = dark_color(Pallete::DeepBlue);
         egui::warn_if_debug_build(ui);
+        let padding = ui.spacing().item_spacing.x;
         StripBuilder::new(&mut ui)
             .size(Size::remainder())
-            .size(Size::exact(128.0 * 6.0))
+            .size(Size::exact(
+                container_size_for_cells(&CHANNEL_UI_SIZES, padding) + MACHINE_H_PADDING * 2.0,
+            ))
             .size(Size::remainder())
             .horizontal(|mut strip| {
                 strip.empty();
@@ -224,7 +229,7 @@ fn ui_sys(
                     strip.cell(|ui| {
                         ui.label("BPM");
                         ui.add(
-                            egui::Slider::new(&mut bpm.0, 1.0..=300.0)
+                            egui::Slider::new(&mut bpm.0, 20.0..=220.0)
                                 .text("BPM")
                                 .clamp_to_range(true),
                         );
@@ -232,37 +237,59 @@ fn ui_sys(
                             kira::ClockSpeed::TicksPerSecond(steps_per_sec(bpm.0)),
                             Tween::default(),
                         );
-                        ui.painter().rect_filled(
-                            ui.available_rect_before_wrap().shrink(1.0),
-                            4.0,
-                            bg_color,
-                        );
                         ui.separator();
-                        if tracks.iter().next().is_none() {
-                            ui.label("No tracks found.");
-                            return;
-                        }
-                        // Visit tracks patterns in order.
-                        for parent in parents.iter() {
-                            for (i, child) in parent.iter().enumerate() {
-                                if let Ok((_eid, mut pattern)) = patterns.get_mut(*child) {
-                                    channel_view(
-                                        ui,
-                                        "♪",
-                                        "drum",
-                                        0,
-                                        i,
-                                        &mut tracks.single_mut(),
-                                        &mut pattern,
-                                    );
-                                }
-                            }
-                        }
+                        machine_ui(ui, tracks, parents, patterns);
                     });
                 }
                 strip.empty();
             });
     });
+}
+
+fn machine_ui(
+    mut ui: &mut egui::Ui,
+    mut tracks: Query<&mut KiraAssociatedTracks>,
+    parents: Query<&Children, With<KiraAssociatedTracks>>,
+    mut patterns: Query<(Entity, &mut DrumPattern)>,
+) {
+    let bg_color: Color32 = dark_color(Pallete::DeepBlue);
+    ui.painter()
+        .rect_filled(ui.available_rect_before_wrap(), 8.0, bg_color);
+    if tracks.iter().next().is_none() {
+        ui.label("No tracks found.");
+        return;
+    }
+    ui.label("");
+    let padding = ui.spacing().item_spacing.x;
+    StripBuilder::new(&mut ui)
+        .size(Size::remainder())
+        .size(Size::exact(container_size_for_cells(
+            &CHANNEL_UI_SIZES,
+            padding,
+        )))
+        .size(Size::remainder())
+        .horizontal(|mut strip| {
+            strip.empty();
+            strip.cell(|ui| {
+                // Visit tracks patterns in order.
+                for parent in parents.iter() {
+                    for (i, child) in parent.iter().enumerate() {
+                        if let Ok((_eid, mut pattern)) = patterns.get_mut(*child) {
+                            channel_view(
+                                ui,
+                                "♪",
+                                "drum",
+                                0,
+                                i,
+                                &mut tracks.single_mut(),
+                                &mut pattern,
+                            );
+                        }
+                    }
+                }
+            });
+            strip.empty();
+        });
 }
 
 fn light_color(color: impl Into<Rgba>) -> Color32 {
@@ -291,42 +318,38 @@ fn channel_view(
     StripBuilder::new(ui)
         .size(Size::exact(48.0))
         .vertical(|mut strip| {
-            strip.strip(|builder| {
-                builder
-                    .size(Size::exact(64.0))
-                    .size(Size::exact(64.0))
-                    .size(Size::exact(128.0))
-                    .size(Size::exact(128.0))
-                    .size(Size::exact(128.0))
-                    .size(Size::exact(128.0))
-                    .horizontal(|mut strip| {
-                        strip.cell(|mut ui| {
-                            channel_title_view(&mut ui, icon, title);
-                        });
-                        strip.cell(|mut ui| {
-                            track_selector_view(&mut ui, track_id, tracks, drum_pattern);
-                        });
-                        let steps = &mut drum_pattern.steps[..];
-                        for beat in 0..4 {
-                            strip.cell(|mut ui| {
-                                let base_color: Rgba = if beat % 2 == 0 {
-                                    Pallete::FreshGreen.into()
-                                } else {
-                                    Pallete::MintGreen.into()
-                                };
-                                let (_, tail) = steps.split_at_mut(beat * 4);
-                                let (this_beat, _) = tail.split_array_mut();
-                                beat_view(
-                                    &mut ui,
-                                    light_color(base_color),
-                                    dark_color(base_color),
-                                    pattern,
-                                    beat,
-                                    this_beat,
-                                );
-                            });
-                        }
+            strip.strip(|mut builder| {
+                for size in &CHANNEL_UI_SIZES {
+                    builder = builder.size(Size::exact(*size));
+                }
+                builder.horizontal(|mut strip| {
+                    strip.cell(|mut ui| {
+                        channel_title_view(&mut ui, icon, title);
                     });
+                    strip.cell(|mut ui| {
+                        track_selector_view(&mut ui, track_id, tracks, drum_pattern);
+                    });
+                    let steps = &mut drum_pattern.steps[..];
+                    for beat in 0..4 {
+                        strip.cell(|mut ui| {
+                            let base_color: Rgba = if beat % 2 == 0 {
+                                Pallete::FreshGreen.into()
+                            } else {
+                                Pallete::MintGreen.into()
+                            };
+                            let (_, tail) = steps.split_at_mut(beat * 4);
+                            let (this_beat, _) = tail.split_array_mut();
+                            beat_view(
+                                &mut ui,
+                                light_color(base_color),
+                                dark_color(base_color),
+                                pattern,
+                                beat,
+                                this_beat,
+                            );
+                        });
+                    }
+                });
             });
         });
 }
