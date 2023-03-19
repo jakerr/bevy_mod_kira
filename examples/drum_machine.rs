@@ -24,7 +24,7 @@ use egui::Id;
 use egui::Sense;
 use egui_extras::{Size, StripBuilder};
 use kira::{
-    track::{effect::reverb::ReverbHandle, TrackBuilder},
+    track::{effect::reverb::ReverbHandle, TrackBuilder, TrackHandle},
     tween::Tween,
 };
 
@@ -51,6 +51,9 @@ struct DrumPattern {
 #[derive(Component, Reflect)]
 struct Bpm(f64);
 
+#[derive(Component, Reflect)]
+struct Muted(bool);
+
 pub fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
@@ -76,6 +79,7 @@ fn add_instrument_channel(
     let a = loader.load(asset);
     parent.with_children(|parent| {
         let mut channel = parent.spawn(KiraSoundHandle(a));
+        channel.insert(Muted(false));
         let reverb = kira::track::effect::reverb::ReverbBuilder::new()
             .mix(0.0)
             .stereo_width(0.0);
@@ -186,7 +190,8 @@ fn container_size_for_cells(sizes: &[f32], padding: f32) -> f32 {
 fn ui_sys(
     mut ctx: EguiContexts,
     mut clocks: Query<&mut KiraAssociatedClocks>,
-    mut channels: Query<(&KiraAssociatedTracks, &Children)>,
+    mut channels: Query<(Entity, &mut KiraAssociatedTracks, &Children)>,
+    mut chan_mute: Query<&mut Muted>,
     mut bpm: Query<&mut Bpm>,
     mut patterns: Query<(Entity, &mut DrumPattern)>,
 ) {
@@ -217,7 +222,7 @@ fn ui_sys(
                             Tween::default(),
                         );
                         ui.separator();
-                        machine_ui(ui, channels, patterns);
+                        machine_ui(ui, channels, chan_mute, patterns);
                     });
                 }
                 strip.empty();
@@ -227,7 +232,8 @@ fn ui_sys(
 
 fn machine_ui(
     mut ui: &mut egui::Ui,
-    channels: Query<(&KiraAssociatedTracks, &Children)>,
+    mut channels: Query<(Entity, &mut KiraAssociatedTracks, &Children)>,
+    mut chan_mute: Query<&mut Muted>,
     mut patterns: Query<(Entity, &mut DrumPattern)>,
 ) {
     let bg_color: Color32 = dark_color(Pallete::DeepBlue);
@@ -246,12 +252,16 @@ fn machine_ui(
             strip.empty();
             strip.cell(|ui| {
                 // Visit tracks patterns in order.
-                for (channel_number, (mut tracks, children)) in channels.iter().enumerate() {
+                for (channel_number, (chan_id, mut tracks, children)) in
+                    channels.iter_mut().enumerate()
+                {
                     for (i, child) in children.iter().enumerate() {
                         if let Ok((_eid, mut pattern)) = patterns.get_mut(*child) {
+                            let mut chan_mut = chan_mute.get_mut(chan_id).unwrap();
                             channel_view(
                                 ui,
                                 channel_number,
+                                &mut chan_mut,
                                 "♪",
                                 "drum",
                                 0,
@@ -281,6 +291,13 @@ fn light_color(color: impl Into<Rgba>) -> Color32 {
     color.into()
 }
 
+fn muted_color(color: impl Into<Rgba>) -> Color32 {
+    let mut color = Hsva::from(color.into());
+    color.s = color.s * 0.35;
+    color.v = color.v * 0.30;
+    color.into()
+}
+
 fn dark_color(color: impl Into<Rgba>) -> Color32 {
     let mut color = Hsva::from(color.into());
     color.s = color.s * 0.35;
@@ -291,11 +308,12 @@ fn dark_color(color: impl Into<Rgba>) -> Color32 {
 fn channel_view(
     ui: &mut egui::Ui,
     channel_number: usize,
+    muted: &mut Muted,
     icon: &str,
     title: &str,
     track_id: usize,
     pattern: usize,
-    tracks: &KiraAssociatedTracks,
+    tracks: &mut KiraAssociatedTracks,
     drum_pattern: &mut DrumPattern,
 ) {
     StripBuilder::new(ui)
@@ -306,8 +324,11 @@ fn channel_view(
                     builder = builder.size(Size::exact(*size));
                 }
                 builder.horizontal(|mut strip| {
+                    let base_color: Rgba =
+                        shift_color(Pallete::FreshGreen, (channel_number + 1) as f32 * 30.0).into();
                     strip.cell(|mut ui| {
-                        channel_title_view(&mut ui, icon, title);
+                        let mut track = tracks.0.get_mut(track_id).unwrap();
+                        channel_title_view(&mut ui, icon, title, base_color, &mut track, muted);
                     });
                     strip.cell(|mut ui| {
                         track_selector_view(&mut ui, track_id, tracks, drum_pattern);
@@ -315,20 +336,23 @@ fn channel_view(
                     let steps = &mut drum_pattern.steps[..];
                     for beat in 0..4 {
                         strip.cell(|mut ui| {
-                            let base_color: Rgba = if beat % 2 == 0 {
-                                shift_color(Pallete::FreshGreen, (channel_number + 1) as f32 * 30.0)
-                                    .into()
-                            } else {
-                                shift_color(Pallete::FreshGreen, (channel_number + 1) as f32 * 40.0)
-                                    .into()
+                            let mut beat_color = base_color;
+                            if beat % 2 == 1 {
+                                beat_color =
+                                    shift_color(beat_color, (channel_number + 1) as f32 * 40.0)
+                                        .into();
                             };
                             let (_, tail) = steps.split_at_mut(beat * 4);
                             let (this_beat, _) = tail.split_array_mut();
                             beat_view(
                                 &mut ui,
                                 channel_number,
-                                light_color(base_color),
-                                dark_color(base_color),
+                                if muted.0 {
+                                    muted_color(beat_color)
+                                } else {
+                                    light_color(beat_color)
+                                },
+                                dark_color(beat_color),
                                 pattern,
                                 beat,
                                 this_beat,
@@ -340,13 +364,32 @@ fn channel_view(
         });
 }
 
-fn channel_title_view(ui: &mut egui::Ui, icon: &str, title: &str) {
+fn channel_title_view(
+    ui: &mut egui::Ui,
+    icon: &str,
+    title: &str,
+    color: Rgba,
+    track: &mut TrackHandle,
+    muted: &mut Muted,
+) {
+    let rect = ui.available_rect_before_wrap().shrink(1.0);
+    let id = Id::new("channel_title").with(track.id());
+    let touch = ui.interact(rect, id, Sense::click());
     ui.painter().rect_filled(
-        ui.available_rect_before_wrap().shrink(1.0),
+        rect,
         4.0,
-        dark_color(Pallete::LeafGreen),
+        if muted.0 {
+            dark_color(color)
+        } else {
+            light_color(color)
+        },
     );
     ui.label(format!("{} {}", icon, title));
+    if touch.clicked() {
+        muted.0 = !muted.0;
+        let volume = if muted.0 { 0.0 } else { 1.0 };
+        track.set_volume(volume, Tween::default());
+    }
 }
 
 fn track_selector_view(
