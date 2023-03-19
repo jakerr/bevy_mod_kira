@@ -115,14 +115,14 @@ struct LastTicks(HashMap<Entity, u64>);
 
 fn playback_sys(
     assets: Res<Assets<StaticSoundAsset>>,
-    channels: Query<(&KiraSoundHandle, &KiraAssociatedTracks, &Parent)>,
+    channels: Query<(&KiraSoundHandle, &KiraAssociatedTracks)>,
     patterns: Query<(Entity, &DrumPattern, &Parent)>,
     clock: Query<&KiraAssociatedClocks>,
     mut ev_play: EventWriter<PlaySoundEvent>,
     mut last_ticks: Local<LastTicks>,
 ) {
     for (pattern_id, pattern, parent) in patterns.iter() {
-        if let Ok((sound, tracks, parent)) = channels.get(parent.get()) {
+        if let Ok((sound, tracks)) = channels.get(parent.get()) {
             let clock = clock.single().0.first().unwrap();
             let clock_ticks = clock.time().ticks;
             let last_tick = last_ticks.0.get(&pattern_id).copied().unwrap_or(u64::MAX);
@@ -180,11 +180,12 @@ impl From<Pallete> for Color32 {
     }
 }
 
-const CHANNEL_UI_SIZES: [f32; 6] = [64.0, 64.0, 128.0, 128.0, 128.0, 128.0];
+const CHANNEL_UI_SIZES: [f32; 6] = [64.0, 16.0, 128.0, 128.0, 128.0, 128.0];
 const MACHINE_H_PADDING: f32 = 32.0;
+const MACHINE_V_PADDING: f32 = 12.0;
 
 fn container_size_for_cells(sizes: &[f32], padding: f32) -> f32 {
-    padding * (sizes.len() as f32 + 1.0) + sizes.iter().sum::<f32>()
+    padding * (sizes.len() - 1) as f32 + sizes.iter().sum::<f32>()
 }
 
 fn ui_sys(
@@ -211,18 +212,14 @@ fn ui_sys(
                 if let Some(clock) = clock {
                     let mut bpm = bpm.single_mut();
                     strip.cell(|ui| {
-                        ui.label("BPM");
-                        ui.add(
-                            egui::Slider::new(&mut bpm.0, 20.0..=220.0)
-                                .text("BPM")
-                                .clamp_to_range(true),
-                        );
+                        let bg_color: Color32 = dark_color(Pallete::DeepBlue);
+                        ui.painter()
+                            .rect_filled(ui.available_rect_before_wrap(), 8.0, bg_color);
                         let _ = clock.set_speed(
                             kira::ClockSpeed::TicksPerSecond(steps_per_sec(bpm.0)),
                             Tween::default(),
                         );
-                        ui.separator();
-                        machine_ui(ui, channels, chan_mute, patterns);
+                        machine_ui(ui, &mut bpm, channels, chan_mute, patterns);
                     });
                 }
                 strip.empty();
@@ -232,14 +229,11 @@ fn ui_sys(
 
 fn machine_ui(
     mut ui: &mut egui::Ui,
+    bpm: &mut Bpm,
     mut channels: Query<(Entity, &mut KiraAssociatedTracks, &Children)>,
     mut chan_mute: Query<&mut Muted>,
     mut patterns: Query<(Entity, &mut DrumPattern)>,
 ) {
-    let bg_color: Color32 = dark_color(Pallete::DeepBlue);
-    ui.painter()
-        .rect_filled(ui.available_rect_before_wrap(), 8.0, bg_color);
-    ui.label("");
     let padding = ui.spacing().item_spacing.x;
     StripBuilder::new(&mut ui)
         .size(Size::remainder())
@@ -251,6 +245,14 @@ fn machine_ui(
         .horizontal(|mut strip| {
             strip.empty();
             strip.cell(|ui| {
+                ui.add_space(MACHINE_V_PADDING);
+                ui.label("BPM");
+                ui.add(
+                    egui::Slider::new(&mut bpm.0, 20.0..=220.0)
+                        .text("BPM")
+                        .clamp_to_range(true),
+                );
+                ui.add_space(10.0);
                 // Visit tracks patterns in order.
                 for (channel_number, (chan_id, mut tracks, children)) in
                     channels.iter_mut().enumerate()
@@ -280,7 +282,10 @@ fn machine_ui(
 fn shift_color(color: impl Into<Rgba>, degrees: f32) -> Color32 {
     let mut color = Hsva::from(color.into());
     // H is between 0 and 1, so we need to multiply by 360 to get degrees.
-    color.h = color.h + (degrees / 360.0).clamp(0.0, 1.0);
+    color.h = color.h + (degrees / 360.0);
+    if color.h > 1.0 {
+        color.h = color.h - 1.0;
+    }
     color.into()
 }
 
@@ -339,7 +344,7 @@ fn channel_view(
                             let mut beat_color = base_color;
                             if beat % 2 == 1 {
                                 beat_color =
-                                    shift_color(beat_color, (channel_number + 1) as f32 * 40.0)
+                                    shift_color(beat_color, (channel_number + 1) as f32 * 12.0)
                                         .into();
                             };
                             let (_, tail) = steps.split_at_mut(beat * 4);
