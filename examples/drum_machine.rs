@@ -1,6 +1,7 @@
 #![feature(split_array)]
 
 use bevy::{
+    ecs::system::EntityCommands,
     prelude::{
         debug, error, warn, App, AssetServer, Assets, BuildChildren, Children, Commands, Component,
         Entity, EventWriter, Local, Parent, Query, Res, With,
@@ -13,6 +14,7 @@ use bevy_egui::{
     egui::{self, epaint::Hsva, Pos2, Rgba, Stroke},
     EguiContexts, EguiPlugin,
 };
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_mod_kira::{
     AddClockEvent, AddTrackEvent, KiraAssociatedClocks, KiraAssociatedTracks, KiraPlugin,
     KiraSoundHandle, PlaySoundEvent, StaticSoundAsset,
@@ -41,7 +43,7 @@ fn steps_per_sec(bpm: f64) -> f64 {
 // the clock tick rate so that we are sure that we are enqueueing the next step in time.
 const PLAYHEAD_RESOLUTION_MS: u32 = ((1000.0 / STEP_PER_SEC) * 0.8) as u32;
 
-#[derive(Component, Reflect)]
+#[derive(Component, Default, Reflect)]
 struct DrumPattern {
     steps: [bool; STEPS],
 }
@@ -53,7 +55,8 @@ pub fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugin(KiraPlugin)
-        .add_plugin(EguiPlugin)
+        .add_plugin(WorldInspectorPlugin::new())
+        // .add_plugin(EguiPlugin)
         .add_startup_system(setup_sys)
         .add_system(playback_sys)
         .add_system(ui_sys)
@@ -64,55 +67,43 @@ pub fn main() {
 #[derive(Component, Reflect)]
 struct TrackOneReverb(#[reflect(ignore)] ReverbHandle);
 
+fn add_instrument_channel(
+    asset: &str,
+    parent: &mut EntityCommands,
+    loader: &AssetServer,
+    ev_tracks: &mut EventWriter<AddTrackEvent>,
+) {
+    let a = loader.load(asset);
+    parent.with_children(|parent| {
+        let mut channel = parent.spawn(KiraSoundHandle(a));
+        let reverb = kira::track::effect::reverb::ReverbBuilder::new()
+            .mix(0.0)
+            .stereo_width(0.0);
+        let mut track = TrackBuilder::new();
+        let reverb_handle = track.add_effect(reverb);
+        ev_tracks.send(AddTrackEvent::new(channel.id(), track));
+        channel.insert(TrackOneReverb(reverb_handle));
+        channel.with_children(|parent| {
+            parent.spawn(DrumPattern::default());
+        });
+    });
+}
+
 fn setup_sys(
     mut commands: Commands,
     loader: Res<AssetServer>,
     mut ev_tracks: EventWriter<AddTrackEvent>,
     mut ev_clocks: EventWriter<AddClockEvent>,
 ) {
-    debug!("BPM: {}", BPM);
-    debug!("BPS: {}", BPS);
-    debug!("STEP_PER_BEAT: {}", STEP_PER_BEAT);
-    debug!("STEPS: {}", STEPS);
-    debug!("STEP_PER_SEC: {}", STEP_PER_SEC);
-    debug!("PLAY_HEAD_RESOLUTION_MS: {}", PLAYHEAD_RESOLUTION_MS);
-    debug!("Setting up track.");
-    let a = loader.load("kick.ogg");
-    let mut track_entity = commands.spawn(KiraSoundHandle(a));
-    let reverb = kira::track::effect::reverb::ReverbBuilder::new()
-        .mix(0.0)
-        .stereo_width(0.0);
-    let mut track = TrackBuilder::new();
-    let reverb_handle = track.add_effect(reverb);
-    track_entity.insert(Bpm(BPM));
-    track_entity.insert(TrackOneReverb(reverb_handle));
-    ev_tracks.send(AddTrackEvent::new(track_entity.id(), track));
+    let mut drum_machine = commands.spawn(Bpm(BPM));
     ev_clocks.send(AddClockEvent::new(
-        track_entity.id(),
+        drum_machine.id(),
         kira::ClockSpeed::TicksPerSecond(STEP_PER_SEC),
     ));
-    track_entity.with_children(|parent| {
-        let x = true;
-        let o = false;
-        #[rustfmt::skip]
-        parent.spawn(DrumPattern {
-            steps: [
-                x, o, o, o,
-                x, o, o, o,
-                x, o, o, x,
-                x, o, x, o,
-            ],
-        });
-        #[rustfmt::skip]
-        parent.spawn(DrumPattern {
-            steps: [
-                o, o, o, o,
-                o, o, o, o,
-                o, o, o, o,
-                o, o, x, x,
-            ],
-        });
-    });
+    add_instrument_channel("kick.ogg", &mut drum_machine, &loader, &mut ev_tracks);
+    add_instrument_channel("snare.ogg", &mut drum_machine, &loader, &mut ev_tracks);
+    add_instrument_channel("hat.ogg", &mut drum_machine, &loader, &mut ev_tracks);
+    add_instrument_channel("muted_hit.ogg", &mut drum_machine, &loader, &mut ev_tracks);
 }
 
 #[derive(Default)]
@@ -120,18 +111,15 @@ struct LastTicks(HashMap<Entity, u64>);
 
 fn playback_sys(
     assets: Res<Assets<StaticSoundAsset>>,
-    tracks: Query<(
-        &KiraSoundHandle,
-        &KiraAssociatedTracks,
-        &KiraAssociatedClocks,
-    )>,
+    channels: Query<(&KiraSoundHandle, &KiraAssociatedTracks, &Parent)>,
     patterns: Query<(Entity, &DrumPattern, &Parent)>,
+    clock: Query<&KiraAssociatedClocks>,
     mut ev_play: EventWriter<PlaySoundEvent>,
     mut last_ticks: Local<LastTicks>,
 ) {
     for (pattern_id, pattern, parent) in patterns.iter() {
-        if let Ok((sound, tracks, clocks)) = tracks.get(parent.get()) {
-            let clock = clocks.0.first().unwrap();
+        if let Ok((sound, tracks, parent)) = channels.get(parent.get()) {
+            let clock = clock.single().0.first().unwrap();
             let clock_ticks = clock.time().ticks;
             let last_tick = last_ticks.0.get(&pattern_id).copied().unwrap_or(u64::MAX);
             if clock_ticks == last_tick {
@@ -177,15 +165,7 @@ impl From<Pallete> for Rgba {
         let r: u8 = ((col >> 16) & 0xff) as u8;
         let g: u8 = ((col >> 8) & 0xff) as u8;
         let b: u8 = (col & 0xff) as u8;
-        match p {
-            Pallete::AquaBlue => {
-                dbg!(p);
-                dbg!(r, g, b);
-            }
-            _ => {}
-        }
         Rgba::from_srgba_unmultiplied(r, g, b, 255)
-        // Rgba::from_srgba_premultiplied(r, g, b, 255)
     }
 }
 
@@ -206,9 +186,8 @@ fn container_size_for_cells(sizes: &[f32], padding: f32) -> f32 {
 fn ui_sys(
     mut ctx: EguiContexts,
     mut clocks: Query<&mut KiraAssociatedClocks>,
-    mut tracks: Query<&mut KiraAssociatedTracks>,
+    mut channels: Query<(&KiraAssociatedTracks, &Children)>,
     mut bpm: Query<&mut Bpm>,
-    parents: Query<&Children, With<KiraAssociatedTracks>>,
     mut patterns: Query<(Entity, &mut DrumPattern)>,
 ) {
     let mut first_clock = clocks.iter_mut().next();
@@ -238,7 +217,7 @@ fn ui_sys(
                             Tween::default(),
                         );
                         ui.separator();
-                        machine_ui(ui, tracks, parents, patterns);
+                        machine_ui(ui, channels, patterns);
                     });
                 }
                 strip.empty();
@@ -248,17 +227,12 @@ fn ui_sys(
 
 fn machine_ui(
     mut ui: &mut egui::Ui,
-    mut tracks: Query<&mut KiraAssociatedTracks>,
-    parents: Query<&Children, With<KiraAssociatedTracks>>,
+    channels: Query<(&KiraAssociatedTracks, &Children)>,
     mut patterns: Query<(Entity, &mut DrumPattern)>,
 ) {
     let bg_color: Color32 = dark_color(Pallete::DeepBlue);
     ui.painter()
         .rect_filled(ui.available_rect_before_wrap(), 8.0, bg_color);
-    if tracks.iter().next().is_none() {
-        ui.label("No tracks found.");
-        return;
-    }
     ui.label("");
     let padding = ui.spacing().item_spacing.x;
     StripBuilder::new(&mut ui)
@@ -272,16 +246,17 @@ fn machine_ui(
             strip.empty();
             strip.cell(|ui| {
                 // Visit tracks patterns in order.
-                for parent in parents.iter() {
-                    for (i, child) in parent.iter().enumerate() {
+                for (channel_number, (mut tracks, children)) in channels.iter().enumerate() {
+                    for (i, child) in children.iter().enumerate() {
                         if let Ok((_eid, mut pattern)) = patterns.get_mut(*child) {
                             channel_view(
                                 ui,
+                                channel_number,
                                 "♪",
                                 "drum",
                                 0,
                                 i,
-                                &mut tracks.single_mut(),
+                                &mut tracks,
                                 &mut pattern,
                             );
                         }
@@ -290,6 +265,13 @@ fn machine_ui(
             });
             strip.empty();
         });
+}
+
+fn shift_color(color: impl Into<Rgba>, degrees: f32) -> Color32 {
+    let mut color = Hsva::from(color.into());
+    // H is between 0 and 1, so we need to multiply by 360 to get degrees.
+    color.h = color.h + (degrees / 360.0).clamp(0.0, 1.0);
+    color.into()
 }
 
 fn light_color(color: impl Into<Rgba>) -> Color32 {
@@ -308,6 +290,7 @@ fn dark_color(color: impl Into<Rgba>) -> Color32 {
 
 fn channel_view(
     ui: &mut egui::Ui,
+    channel_number: usize,
     icon: &str,
     title: &str,
     track_id: usize,
@@ -333,14 +316,17 @@ fn channel_view(
                     for beat in 0..4 {
                         strip.cell(|mut ui| {
                             let base_color: Rgba = if beat % 2 == 0 {
-                                Pallete::FreshGreen.into()
+                                shift_color(Pallete::FreshGreen, (channel_number + 1) as f32 * 30.0)
+                                    .into()
                             } else {
-                                Pallete::MintGreen.into()
+                                shift_color(Pallete::FreshGreen, (channel_number + 1) as f32 * 40.0)
+                                    .into()
                             };
                             let (_, tail) = steps.split_at_mut(beat * 4);
                             let (this_beat, _) = tail.split_array_mut();
                             beat_view(
                                 &mut ui,
+                                channel_number,
                                 light_color(base_color),
                                 dark_color(base_color),
                                 pattern,
@@ -378,6 +364,7 @@ fn track_selector_view(
 
 fn beat_view(
     ui: &mut egui::Ui,
+    channel_num: usize,
     on_color: Color32,
     off_color: Color32,
     pattern: usize,
@@ -387,7 +374,7 @@ fn beat_view(
     ui.columns(4, |columns| {
         // debug!("beat_view: beat={}, steps={:?}", beat, steps);
         for (i, ui) in columns.iter_mut().enumerate() {
-            let id = Id::new("drum_step").with((pattern, beat, i));
+            let id = Id::new("drum_step").with((channel_num, pattern, beat, i));
             // dbg!(id);
             let target = ui.interact(ui.available_rect_before_wrap(), id, Sense::click());
             ui.painter().rect_filled(
