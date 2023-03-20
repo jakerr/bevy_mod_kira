@@ -5,27 +5,27 @@ use std::ops::RangeInclusive;
 use bevy::{
     ecs::system::EntityCommands,
     prelude::{
-        debug, error, warn, App, AssetServer, Assets, BuildChildren, Changed, Children, Color,
-        Commands, Component, Entity, EventWriter, Local, Parent, Query, Res, With,
+        default, error, warn, App, AssetServer, Assets, BuildChildren, Changed, Children, Commands, Component, Entity, EventWriter, Local, Parent, PluginGroup, Query, Res,
     },
     reflect::Reflect,
     utils::HashMap,
+    window::{PresentMode, Window, WindowPlugin},
     DefaultPlugins,
 };
 use bevy_egui::{
-    egui::{self, epaint::Hsva, NumExt, Pos2, Rgba, Stroke},
-    EguiContexts, EguiPlugin,
+    egui::{self, epaint::Hsva, Pos2, Rgba, Stroke},
+    EguiContexts,
 };
 use bevy_inspector_egui::{egui::RichText, quick::WorldInspectorPlugin};
 use bevy_mod_kira::{
     AddClockEvent, AddTrackEvent, KiraAssociatedClocks, KiraAssociatedTracks, KiraPlugin,
     KiraSoundHandle, PlaySoundEvent, StaticSoundAsset,
 };
-use egui::{Align, Color32, Id, Layout, Sense};
+use egui::{Color32, Id, Sense};
 use egui_extras::{Size, StripBuilder};
 use kira::{
     track::{
-        effect::reverb::{self, ReverbHandle},
+        effect::reverb::{ReverbHandle},
         TrackBuilder, TrackHandle,
     },
     tween::Tween,
@@ -90,7 +90,19 @@ impl Default for ChannelInfo {
 
 pub fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Bevy mod Kira - Drum Machine".into(),
+                resolution: (800., 460.).into(),
+                present_mode: PresentMode::AutoVsync,
+                // Tells wasm to resize the window according to the available canvas
+                fit_canvas_to_parent: true,
+                // Tells wasm not to override default event handling, like F5, Ctrl+R etc.
+                prevent_default_event_handling: false,
+                ..default()
+            }),
+            ..default()
+        }))
         .add_plugin(KiraPlugin)
         .add_plugin(WorldInspectorPlugin::new())
         // .add_plugin(EguiPlugin)
@@ -266,9 +278,10 @@ impl From<Pallete> for Color32 {
     }
 }
 
+const CHANNEL_ROW_HEIGHT: f32 = 64.0;
 const CHANNEL_UI_SIZES: [f32; 7] = [64.0, 18.0, 18.0, 128.0, 128.0, 128.0, 128.0];
 const MACHINE_H_PADDING: f32 = 32.0;
-const MACHINE_V_PADDING: f32 = 12.0;
+const MACHINE_V_PADDING: f32 = 6.0;
 
 fn container_size_for_cells(sizes: &[f32], padding: f32) -> f32 {
     padding * (sizes.len() - 1) as f32 + sizes.iter().sum::<f32>()
@@ -277,10 +290,10 @@ fn container_size_for_cells(sizes: &[f32], padding: f32) -> f32 {
 fn ui_sys(
     mut ctx: EguiContexts,
     mut clocks: Query<&mut KiraAssociatedClocks>,
-    mut channels: Query<(Entity, &mut KiraAssociatedTracks, &Children)>,
-    mut chan_mute: Query<&mut ChannelInfo>,
+    channels: Query<(Entity, &mut KiraAssociatedTracks, &Children)>,
+    chan_mute: Query<&mut ChannelInfo>,
     mut bpm: Query<&mut Bpm>,
-    mut patterns: Query<(Entity, &mut DrumPattern)>,
+    patterns: Query<(Entity, &mut DrumPattern)>,
 ) {
     let mut first_clock = clocks.iter_mut().next();
     let clock = first_clock.as_mut().map(|c| &mut c.0[0]);
@@ -298,9 +311,6 @@ fn ui_sys(
                 if let Some(clock) = clock {
                     let mut bpm = bpm.single_mut();
                     strip.cell(|ui| {
-                        let bg_color: Color32 = dark_color(Pallete::DeepBlue);
-                        ui.painter()
-                            .rect_filled(ui.available_rect_before_wrap(), 8.0, bg_color);
                         let _ = clock.set_speed(
                             kira::ClockSpeed::TicksPerSecond(steps_per_sec(bpm.0)),
                             Tween::default(),
@@ -320,43 +330,59 @@ fn machine_ui(
     mut chan_mute: Query<&mut ChannelInfo>,
     mut patterns: Query<(Entity, &mut DrumPattern)>,
 ) {
-    let padding = ui.spacing().item_spacing.x;
+    let padding_x = ui.spacing().item_spacing.x;
+    let padding_y = ui.spacing().item_spacing.y;
+    let total_height = (CHANNEL_ROW_HEIGHT + padding_y) * 5.0 + MACHINE_V_PADDING * 2.0;
+    let bg_color: Color32 = dark_color(Pallete::DeepBlue);
     StripBuilder::new(&mut ui)
         .size(Size::remainder())
-        .size(Size::exact(container_size_for_cells(
-            &CHANNEL_UI_SIZES,
-            padding,
-        )))
+        .size(Size::exact(total_height))
         .size(Size::remainder())
-        .horizontal(|mut strip| {
+        .vertical(|mut strip| {
             strip.empty();
-            strip.cell(|ui| {
-                ui.add_space(MACHINE_V_PADDING);
-                ui.add(
-                    egui::Slider::new(&mut bpm.0, 20.0..=220.0)
-                        .text("BPM")
-                        .clamp_to_range(true),
-                );
-                ui.add_space(10.0);
-                // Visit tracks patterns in order.
-                for (channel_number, (chan_id, mut tracks, children)) in
-                    channels.iter_mut().enumerate()
-                {
-                    for (i, child) in children.iter().enumerate() {
-                        if let Ok((_eid, mut pattern)) = patterns.get_mut(*child) {
-                            let mut chan_mut = chan_mute.get_mut(chan_id).unwrap();
-                            channel_view(
-                                ui,
-                                channel_number,
-                                &mut chan_mut,
-                                0,
-                                i,
-                                &mut tracks,
-                                &mut pattern,
+            strip.strip(|builder| {
+                builder
+                    .size(Size::remainder())
+                    .size(Size::exact(container_size_for_cells(
+                        &CHANNEL_UI_SIZES,
+                        padding_x,
+                    )))
+                    .size(Size::remainder())
+                    .horizontal(|mut strip| {
+                        strip.empty();
+                        strip.cell(|ui| {
+                            let paint_rect = ui.available_rect_before_wrap();
+                            let paint_rect = paint_rect.shrink(-MACHINE_H_PADDING);
+                            ui.painter().rect_filled(paint_rect, 8.0, bg_color);
+                            ui.add(
+                                egui::Slider::new(&mut bpm.0, 20.0..=220.0)
+                                    .text("BPM")
+                                    .clamp_to_range(true),
                             );
-                        }
-                    }
-                }
+                            ui.add_space(10.0);
+                            // Visit tracks patterns in order.
+                            for (channel_number, (chan_id, mut tracks, children)) in
+                                channels.iter_mut().enumerate()
+                            {
+                                for (i, child) in children.iter().enumerate() {
+                                    if let Ok((_eid, mut pattern)) = patterns.get_mut(*child) {
+                                        let mut chan_mut = chan_mute.get_mut(chan_id).unwrap();
+                                        channel_view(
+                                            ui,
+                                            channel_number,
+                                            &mut chan_mut,
+                                            0,
+                                            i,
+                                            &mut tracks,
+                                            &mut pattern,
+                                        );
+                                    }
+                                }
+                            }
+                            control_legend_view(ui);
+                        });
+                        strip.empty();
+                    });
             });
             strip.empty();
         });
@@ -410,7 +436,7 @@ fn channel_view(
     drum_pattern: &mut DrumPattern,
 ) {
     StripBuilder::new(ui)
-        .size(Size::exact(64.0))
+        .size(Size::exact(CHANNEL_ROW_HEIGHT))
         .vertical(|mut strip| {
             strip.strip(|mut builder| {
                 for size in &CHANNEL_UI_SIZES {
@@ -469,6 +495,51 @@ fn channel_view(
                         });
                     }
                 });
+            });
+        });
+}
+
+fn control_legend_view(ui: &mut egui::Ui) {
+    let sizes = [
+        *&CHANNEL_UI_SIZES[0],
+        *&CHANNEL_UI_SIZES[1],
+        *&CHANNEL_UI_SIZES[2],
+        *&CHANNEL_UI_SIZES[3] * 4.0,
+    ];
+    StripBuilder::new(ui)
+        .size(Size::exact(32.0))
+        .size(Size::remainder())
+        .vertical(|mut strip| {
+            strip.strip(|mut builder| {
+                for size in sizes {
+                    builder = builder.size(Size::exact(size));
+                }
+                builder.horizontal(|mut strip| {
+                    strip.cell(|ui| {
+                        ui.vertical_centered(|ui| {
+                            ui.label("mute");
+                        });
+                    });
+                    strip.cell(|ui| {
+                        ui.vertical_centered(|ui| {
+                            ui.label("v");
+                        });
+                    });
+                    strip.cell(|ui| {
+                        ui.vertical_centered(|ui| {
+                            ui.label("r");
+                        });
+                    });
+                    strip.cell(|ui| {
+                        ui.vertical_centered(|ui| {
+                            ui.label("steps");
+                        });
+                    });
+                });
+            });
+            strip.cell(|ui| {
+                ui.label("      v: volume");
+                ui.label("      r: reverb");
             });
         });
 }
