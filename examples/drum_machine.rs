@@ -40,6 +40,15 @@ const DEFAULT_HAT: DefaultPattern = DefaultPattern(0b0010_1010_1010_1111);
 const DEFAULT_SNARE: DefaultPattern = DefaultPattern(0b0000_1000_0000_1000);
 const DEFAULT_HIT: DefaultPattern = DefaultPattern(0b0010_0000_1101_0101);
 
+const CHANNEL_ROW_HEIGHT: f32 = 64.0;
+const CHANNEL_UI_SIZES: [f32; 7] = [64.0, 18.0, 18.0, 128.0, 128.0, 128.0, 128.0];
+const MACHINE_H_PADDING: f32 = 32.0;
+const MACHINE_V_PADDING: f32 = 6.0;
+
+fn steps_per_sec(bpm: f64) -> f64 {
+    bpm / 60.0 * STEP_PER_BEAT as f64
+}
+
 impl From<DefaultPattern> for DrumPattern {
     fn from(p: DefaultPattern) -> Self {
         let p = p.0.reverse_bits();
@@ -49,11 +58,6 @@ impl From<DefaultPattern> for DrumPattern {
         }
         Self { steps }
     }
-}
-
-// Non const of the same as above for use in the UI.
-fn steps_per_sec(bpm: f64) -> f64 {
-    bpm / 60.0 * STEP_PER_BEAT as f64
 }
 
 #[derive(Component, Default, Reflect)]
@@ -113,38 +117,9 @@ pub fn main() {
 #[derive(Component, Reflect)]
 struct TrackReverb(#[reflect(ignore)] ReverbHandle);
 
-fn add_instrument_channel(
-    asset: &str,
-    icon: &str,
-    default_pattern: impl Into<DrumPattern>,
-    default_mute: bool,
-    parent: &mut EntityCommands,
-    loader: &AssetServer,
-    ev_tracks: &mut EventWriter<AddTrackEvent>,
-) {
-    let a = loader.load(asset);
-    parent.with_children(|parent| {
-        let mut channel = parent.spawn(KiraSoundHandle(a));
-        let name = asset.split('.').next().unwrap();
-        channel.insert(ChannelInfo {
-            name: name.to_string(),
-            icon: icon.to_string(),
-            muted: default_mute,
-            ..Default::default()
-        });
-        let reverb = kira::track::effect::reverb::ReverbBuilder::new()
-            .mix(0.0)
-            .stereo_width(0.0);
-        let volume = if default_mute { 0.0 } else { 1.0 };
-        let mut track = TrackBuilder::new().volume(volume);
-        let reverb_handle = track.add_effect(reverb);
-        ev_tracks.send(AddTrackEvent::new(channel.id(), track));
-        channel.insert(TrackReverb(reverb_handle));
-        channel.with_children(|parent| {
-            parent.spawn(default_pattern.into());
-        });
-    });
-}
+//
+// Systems
+//
 
 fn setup_sys(
     mut commands: Commands,
@@ -260,43 +235,6 @@ fn apply_levels_sys(
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
-enum Pallete {
-    FreshGreen = 0x99dd55,
-    LeafGreen = 0x44dd88,
-    MintGreen = 0x22ccbb,
-    AquaBlue = 0x0099cc,
-    DeepBlue = 0x3366bb,
-    GrapePurple = 0x663399,
-}
-
-impl From<Pallete> for Rgba {
-    fn from(p: Pallete) -> Self {
-        let col = p as u32;
-        let r: u8 = ((col >> 16) & 0xff) as u8;
-        let g: u8 = ((col >> 8) & 0xff) as u8;
-        let b: u8 = (col & 0xff) as u8;
-        Rgba::from_srgba_unmultiplied(r, g, b, 255)
-    }
-}
-
-impl From<Pallete> for Color32 {
-    fn from(p: Pallete) -> Self {
-        let rgb: Rgba = p.into();
-        rgb.into()
-    }
-}
-
-const CHANNEL_ROW_HEIGHT: f32 = 64.0;
-const CHANNEL_UI_SIZES: [f32; 7] = [64.0, 18.0, 18.0, 128.0, 128.0, 128.0, 128.0];
-const MACHINE_H_PADDING: f32 = 32.0;
-const MACHINE_V_PADDING: f32 = 6.0;
-
-fn container_size_for_cells(sizes: &[f32], padding: f32) -> f32 {
-    padding * (sizes.len() - 1) as f32 + sizes.iter().sum::<f32>()
-}
-
 fn ui_sys(
     mut ctx: EguiContexts,
     mut clocks: Query<&mut KiraAssociatedClocks>,
@@ -332,6 +270,51 @@ fn ui_sys(
             });
     });
 }
+
+//
+// Private utility functions
+//
+
+fn add_instrument_channel(
+    asset: &str,
+    icon: &str,
+    default_pattern: impl Into<DrumPattern>,
+    default_mute: bool,
+    parent: &mut EntityCommands,
+    loader: &AssetServer,
+    ev_tracks: &mut EventWriter<AddTrackEvent>,
+) {
+    let a = loader.load(asset);
+    parent.with_children(|parent| {
+        let mut channel = parent.spawn(KiraSoundHandle(a));
+        let name = asset.split('.').next().unwrap();
+        channel.insert(ChannelInfo {
+            name: name.to_string(),
+            icon: icon.to_string(),
+            muted: default_mute,
+            ..Default::default()
+        });
+        let reverb = kira::track::effect::reverb::ReverbBuilder::new()
+            .mix(0.0)
+            .stereo_width(0.0);
+        let volume = if default_mute { 0.0 } else { 1.0 };
+        let mut track = TrackBuilder::new().volume(volume);
+        let reverb_handle = track.add_effect(reverb);
+        ev_tracks.send(AddTrackEvent::new(channel.id(), track));
+        channel.insert(TrackReverb(reverb_handle));
+        channel.with_children(|parent| {
+            parent.spawn(default_pattern.into());
+        });
+    });
+}
+
+fn container_size_for_cells(sizes: &[f32], padding: f32) -> f32 {
+    padding * (sizes.len() - 1) as f32 + sizes.iter().sum::<f32>()
+}
+
+//
+// UI elements
+//
 
 fn machine_ui(
     mut ui: &mut egui::Ui,
@@ -396,43 +379,6 @@ fn machine_ui(
             });
             strip.empty();
         });
-}
-
-fn shift_color(color: impl Into<Rgba>, degrees: f32) -> Color32 {
-    let mut color = Hsva::from(color.into());
-    color.h = color.h + (degrees / 360.0);
-    if color.h > 1.0 {
-        color.h = color.h - 1.0;
-    }
-    color.into()
-}
-
-fn light_color(color: impl Into<Rgba>) -> Color32 {
-    let mut color = Hsva::from(color.into());
-    color.s = color.s * 0.8;
-    color.v = color.v * 0.70;
-    color.into()
-}
-
-fn muted_color(color: impl Into<Rgba>) -> Color32 {
-    let mut color = Hsva::from(color.into());
-    color.s = color.s * 0.35;
-    color.v = color.v * 0.30;
-    color.into()
-}
-
-fn dark_color(color: impl Into<Rgba>) -> Color32 {
-    let mut color = Hsva::from(color.into());
-    color.s = color.s * 0.35;
-    color.v = color.v * 0.10;
-    color.into()
-}
-
-fn contrasty(color: impl Into<Rgba>) -> Color32 {
-    let mut color = Hsva::from(color.into());
-    let brightness = color.v * color.s;
-    color.v = if brightness > 0.3 { 0.2 } else { 0.8 };
-    color.into()
 }
 
 fn channel_view(
@@ -650,4 +596,73 @@ fn beat_view(
             Stroke::new(1.0, Color32::DARK_GRAY),
         );
     }
+}
+
+//
+// Color utils
+//
+
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
+enum Pallete {
+    FreshGreen = 0x99dd55,
+    LeafGreen = 0x44dd88,
+    MintGreen = 0x22ccbb,
+    AquaBlue = 0x0099cc,
+    DeepBlue = 0x3366bb,
+    GrapePurple = 0x663399,
+}
+
+impl From<Pallete> for Rgba {
+    fn from(p: Pallete) -> Self {
+        let col = p as u32;
+        let r: u8 = ((col >> 16) & 0xff) as u8;
+        let g: u8 = ((col >> 8) & 0xff) as u8;
+        let b: u8 = (col & 0xff) as u8;
+        Rgba::from_srgba_unmultiplied(r, g, b, 255)
+    }
+}
+
+impl From<Pallete> for Color32 {
+    fn from(p: Pallete) -> Self {
+        let rgb: Rgba = p.into();
+        rgb.into()
+    }
+}
+
+fn shift_color(color: impl Into<Rgba>, degrees: f32) -> Color32 {
+    let mut color = Hsva::from(color.into());
+    color.h = color.h + (degrees / 360.0);
+    if color.h > 1.0 {
+        color.h = color.h - 1.0;
+    }
+    color.into()
+}
+
+fn light_color(color: impl Into<Rgba>) -> Color32 {
+    let mut color = Hsva::from(color.into());
+    color.s = color.s * 0.8;
+    color.v = color.v * 0.70;
+    color.into()
+}
+
+fn muted_color(color: impl Into<Rgba>) -> Color32 {
+    let mut color = Hsva::from(color.into());
+    color.s = color.s * 0.35;
+    color.v = color.v * 0.30;
+    color.into()
+}
+
+fn dark_color(color: impl Into<Rgba>) -> Color32 {
+    let mut color = Hsva::from(color.into());
+    color.s = color.s * 0.35;
+    color.v = color.v * 0.10;
+    color.into()
+}
+
+fn contrasty(color: impl Into<Rgba>) -> Color32 {
+    let mut color = Hsva::from(color.into());
+    let brightness = color.v * color.s;
+    color.v = if brightness > 0.3 { 0.2 } else { 0.8 };
+    color.into()
 }
