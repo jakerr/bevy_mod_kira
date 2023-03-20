@@ -1,17 +1,19 @@
 #![feature(split_array)]
 
+use std::ops::RangeInclusive;
+
 use bevy::{
     ecs::system::EntityCommands,
     prelude::{
-        debug, error, warn, App, AssetServer, Assets, BuildChildren, Children, Color, Commands,
-        Component, Entity, EventWriter, Local, Parent, Query, Res, With,
+        debug, error, warn, App, AssetServer, Assets, BuildChildren, Changed, Children, Color,
+        Commands, Component, Entity, EventWriter, Local, Parent, Query, Res, With,
     },
     reflect::Reflect,
     utils::HashMap,
     DefaultPlugins,
 };
 use bevy_egui::{
-    egui::{self, epaint::Hsva, Pos2, Rgba, Stroke},
+    egui::{self, epaint::Hsva, NumExt, Pos2, Rgba, Stroke},
     EguiContexts, EguiPlugin,
 };
 use bevy_inspector_egui::{egui::RichText, quick::WorldInspectorPlugin};
@@ -22,7 +24,10 @@ use bevy_mod_kira::{
 use egui::{Align, Color32, Id, Layout, Sense};
 use egui_extras::{Size, StripBuilder};
 use kira::{
-    track::{effect::reverb::ReverbHandle, TrackBuilder, TrackHandle},
+    track::{
+        effect::reverb::{self, ReverbHandle},
+        TrackBuilder, TrackHandle,
+    },
     tween::Tween,
 };
 
@@ -67,6 +72,8 @@ struct ChannelInfo {
     name: String,
     muted: bool,
     icon: String,
+    volume: f64,
+    reverb: f64,
 }
 
 impl Default for ChannelInfo {
@@ -75,6 +82,8 @@ impl Default for ChannelInfo {
             name: "".to_string(),
             muted: false,
             icon: "🔊".to_string(),
+            volume: 0.8,
+            reverb: 0.0,
         }
     }
 }
@@ -87,6 +96,7 @@ pub fn main() {
         // .add_plugin(EguiPlugin)
         .add_startup_system(setup_sys)
         .add_system(playback_sys)
+        .add_system(apply_levels_sys)
         .add_system(ui_sys)
         .register_type::<TrackOneReverb>()
         .run();
@@ -214,6 +224,21 @@ fn playback_sys(
     }
 }
 
+fn apply_levels_sys(
+    mut channels: Query<
+        (&ChannelInfo, &mut KiraAssociatedTracks, &mut TrackOneReverb),
+        Changed<ChannelInfo>,
+    >,
+) {
+    for (info, mut tracks, mut reverb) in channels.iter_mut() {
+        for track in tracks.0.iter_mut() {
+            let volume = if info.muted { 0.0 } else { info.volume };
+            let _ = track.set_volume(volume, Tween::default());
+        }
+        let _ = reverb.0.set_mix(info.reverb, Tween::default());
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum Pallete {
     FreshGreen = 0x99dd55,
@@ -241,7 +266,7 @@ impl From<Pallete> for Color32 {
     }
 }
 
-const CHANNEL_UI_SIZES: [f32; 6] = [64.0, 16.0, 128.0, 128.0, 128.0, 128.0];
+const CHANNEL_UI_SIZES: [f32; 7] = [64.0, 18.0, 18.0, 128.0, 128.0, 128.0, 128.0];
 const MACHINE_H_PADDING: f32 = 32.0;
 const MACHINE_V_PADDING: f32 = 12.0;
 
@@ -378,7 +403,7 @@ fn contrasty(color: impl Into<Rgba>) -> Color32 {
 fn channel_view(
     ui: &mut egui::Ui,
     channel_number: usize,
-    muted: &mut ChannelInfo,
+    info: &mut ChannelInfo,
     track_id: usize,
     pattern: usize,
     tracks: &mut KiraAssociatedTracks,
@@ -396,10 +421,26 @@ fn channel_view(
                         shift_color(Pallete::FreshGreen, (channel_number + 1) as f32 * 30.0).into();
                     strip.cell(|mut ui| {
                         let mut track = tracks.0.get_mut(track_id).unwrap();
-                        channel_title_view(&mut ui, base_color, &mut track, muted);
+                        channel_title_view(&mut ui, base_color, &mut track, info);
+                    });
+                    let is_muted = info.muted;
+                    strip.cell(|mut ui| {
+                        track_fader_view(
+                            &mut ui,
+                            Pallete::LeafGreen,
+                            &mut info.volume,
+                            0.0..=1.0,
+                            is_muted,
+                        );
                     });
                     strip.cell(|mut ui| {
-                        track_selector_view(&mut ui, track_id, tracks, drum_pattern);
+                        track_fader_view(
+                            &mut ui,
+                            Pallete::DeepBlue,
+                            &mut info.reverb,
+                            0.0..=0.5,
+                            is_muted,
+                        );
                     });
                     let steps = &mut drum_pattern.steps[..];
                     for beat in 0..4 {
@@ -415,7 +456,7 @@ fn channel_view(
                             beat_view(
                                 &mut ui,
                                 channel_number,
-                                if muted.muted {
+                                if info.muted {
                                     muted_color(beat_color)
                                 } else {
                                     light_color(beat_color)
@@ -456,21 +497,42 @@ fn channel_title_view(
     // });
     if touch.clicked() {
         info.muted = !info.muted;
-        let volume = if info.muted { 0.0 } else { 1.0 };
-        track.set_volume(volume, Tween::default());
     }
 }
 
-fn track_selector_view(
+fn track_fader_view(
     ui: &mut egui::Ui,
-    _track_id: usize,
-    _tracks: &KiraAssociatedTracks,
-    _drum_pattern: &mut DrumPattern,
+    color: impl Into<Rgba>,
+    value: &mut f64,
+    range: RangeInclusive<f64>,
+    is_muted: bool,
 ) {
-    ui.painter().rect_filled(
-        ui.available_rect_before_wrap().shrink(1.0),
-        4.0,
-        dark_color(Pallete::AquaBlue),
+    let height = ui.available_height();
+    let spacing = ui.spacing_mut();
+    spacing.slider_width = height - 6.0;
+    let style = ui.style_mut();
+
+    let mut color = color.into().clone();
+    let full_color: Rgba = color;
+    let mute_color: Rgba = muted_color(color).into();
+    if is_muted {
+        color = mute_color;
+    } else {
+        let v = *value as f32;
+        let color_sat: f32 = v / (*range.end() as f32 - *range.start() as f32);
+        color = egui::lerp(mute_color..=full_color, color_sat).into();
+    }
+
+    let color = color.into();
+    style.visuals.widgets.inactive.bg_fill = color;
+    style.visuals.widgets.active.bg_fill = color;
+    style.visuals.widgets.hovered.bg_fill = color;
+    ui.add_space(3.0);
+    ui.add(
+        egui::Slider::new(value, range)
+            .vertical()
+            .show_value(false)
+            .clamp_to_range(true),
     );
 }
 
