@@ -3,8 +3,8 @@
 use bevy::{
     ecs::system::EntityCommands,
     prelude::{
-        debug, error, warn, App, AssetServer, Assets, BuildChildren, Children, Commands, Component,
-        Entity, EventWriter, Local, Parent, Query, Res, With,
+        debug, error, warn, App, AssetServer, Assets, BuildChildren, Children, Color, Commands,
+        Component, Entity, EventWriter, Local, Parent, Query, Res, With,
     },
     reflect::Reflect,
     utils::HashMap,
@@ -14,34 +14,45 @@ use bevy_egui::{
     egui::{self, epaint::Hsva, Pos2, Rgba, Stroke},
     EguiContexts, EguiPlugin,
 };
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use bevy_inspector_egui::{egui::RichText, quick::WorldInspectorPlugin};
 use bevy_mod_kira::{
     AddClockEvent, AddTrackEvent, KiraAssociatedClocks, KiraAssociatedTracks, KiraPlugin,
     KiraSoundHandle, PlaySoundEvent, StaticSoundAsset,
 };
-use egui::Color32;
-use egui::Id;
-use egui::Sense;
+use egui::{Align, Color32, Id, Layout, Sense};
 use egui_extras::{Size, StripBuilder};
 use kira::{
     track::{effect::reverb::ReverbHandle, TrackBuilder, TrackHandle},
     tween::Tween,
 };
 
-const BPM: f64 = 110.0;
+const BPM: f64 = 90.0;
 const BPS: f64 = BPM / 60.0;
 const STEP_PER_BEAT: usize = 4;
 const STEPS: usize = STEP_PER_BEAT * 4;
 const STEP_PER_SEC: f64 = BPS * STEP_PER_BEAT as f64;
 
+struct DefaultPattern(u16);
+const DEFAULT_KICK: DefaultPattern = DefaultPattern(0b1001_0000_1001_0000);
+const DEFAULT_HAT: DefaultPattern = DefaultPattern(0b0010_1010_1010_1111);
+const DEFAULT_SNARE: DefaultPattern = DefaultPattern(0b0000_1000_0000_1000);
+const DEFAULT_HIT: DefaultPattern = DefaultPattern(0b0010_0000_1101_0101);
+
+impl From<DefaultPattern> for DrumPattern {
+    fn from(p: DefaultPattern) -> Self {
+        let p = p.0.reverse_bits();
+        let mut steps = [false; STEPS];
+        for i in 0..STEPS {
+            steps[i] = (p & (1 << i)) != 0;
+        }
+        Self { steps }
+    }
+}
+
 // Non const of the same as above for use in the UI.
 fn steps_per_sec(bpm: f64) -> f64 {
     bpm / 60.0 * STEP_PER_BEAT as f64
 }
-
-// We'll trigger a system to queue next sounds at this rate (in ms). We trigger at some division of
-// the clock tick rate so that we are sure that we are enqueueing the next step in time.
-const PLAYHEAD_RESOLUTION_MS: u32 = ((1000.0 / STEP_PER_SEC) * 0.8) as u32;
 
 #[derive(Component, Default, Reflect)]
 struct DrumPattern {
@@ -52,7 +63,21 @@ struct DrumPattern {
 struct Bpm(f64);
 
 #[derive(Component, Reflect)]
-struct Muted(bool);
+struct ChannelInfo {
+    name: String,
+    muted: bool,
+    icon: String,
+}
+
+impl Default for ChannelInfo {
+    fn default() -> Self {
+        Self {
+            name: "".to_string(),
+            muted: false,
+            icon: "🔊".to_string(),
+        }
+    }
+}
 
 pub fn main() {
     App::new()
@@ -72,6 +97,8 @@ struct TrackOneReverb(#[reflect(ignore)] ReverbHandle);
 
 fn add_instrument_channel(
     asset: &str,
+    default_pattern: impl Into<DrumPattern>,
+    default_mute: bool,
     parent: &mut EntityCommands,
     loader: &AssetServer,
     ev_tracks: &mut EventWriter<AddTrackEvent>,
@@ -79,16 +106,22 @@ fn add_instrument_channel(
     let a = loader.load(asset);
     parent.with_children(|parent| {
         let mut channel = parent.spawn(KiraSoundHandle(a));
-        channel.insert(Muted(false));
+        let name = asset.split('.').next().unwrap();
+        channel.insert(ChannelInfo {
+            name: name.to_string(),
+            muted: default_mute,
+            ..Default::default()
+        });
         let reverb = kira::track::effect::reverb::ReverbBuilder::new()
             .mix(0.0)
             .stereo_width(0.0);
-        let mut track = TrackBuilder::new();
+        let volume = if default_mute { 0.0 } else { 1.0 };
+        let mut track = TrackBuilder::new().volume(volume);
         let reverb_handle = track.add_effect(reverb);
         ev_tracks.send(AddTrackEvent::new(channel.id(), track));
         channel.insert(TrackOneReverb(reverb_handle));
         channel.with_children(|parent| {
-            parent.spawn(DrumPattern::default());
+            parent.spawn(default_pattern.into());
         });
     });
 }
@@ -104,10 +137,38 @@ fn setup_sys(
         drum_machine.id(),
         kira::ClockSpeed::TicksPerSecond(STEP_PER_SEC),
     ));
-    add_instrument_channel("kick.ogg", &mut drum_machine, &loader, &mut ev_tracks);
-    add_instrument_channel("snare.ogg", &mut drum_machine, &loader, &mut ev_tracks);
-    add_instrument_channel("hat.ogg", &mut drum_machine, &loader, &mut ev_tracks);
-    add_instrument_channel("muted_hit.ogg", &mut drum_machine, &loader, &mut ev_tracks);
+    add_instrument_channel(
+        "kick.ogg",
+        DEFAULT_KICK,
+        false,
+        &mut drum_machine,
+        &loader,
+        &mut ev_tracks,
+    );
+    add_instrument_channel(
+        "hat.ogg",
+        DEFAULT_HAT,
+        false,
+        &mut drum_machine,
+        &loader,
+        &mut ev_tracks,
+    );
+    add_instrument_channel(
+        "snare.ogg",
+        DEFAULT_SNARE,
+        false,
+        &mut drum_machine,
+        &loader,
+        &mut ev_tracks,
+    );
+    add_instrument_channel(
+        "hit.ogg",
+        DEFAULT_HIT,
+        true,
+        &mut drum_machine,
+        &loader,
+        &mut ev_tracks,
+    );
 }
 
 #[derive(Default)]
@@ -192,7 +253,7 @@ fn ui_sys(
     mut ctx: EguiContexts,
     mut clocks: Query<&mut KiraAssociatedClocks>,
     mut channels: Query<(Entity, &mut KiraAssociatedTracks, &Children)>,
-    mut chan_mute: Query<&mut Muted>,
+    mut chan_mute: Query<&mut ChannelInfo>,
     mut bpm: Query<&mut Bpm>,
     mut patterns: Query<(Entity, &mut DrumPattern)>,
 ) {
@@ -231,7 +292,7 @@ fn machine_ui(
     mut ui: &mut egui::Ui,
     bpm: &mut Bpm,
     mut channels: Query<(Entity, &mut KiraAssociatedTracks, &Children)>,
-    mut chan_mute: Query<&mut Muted>,
+    mut chan_mute: Query<&mut ChannelInfo>,
     mut patterns: Query<(Entity, &mut DrumPattern)>,
 ) {
     let padding = ui.spacing().item_spacing.x;
@@ -246,7 +307,6 @@ fn machine_ui(
             strip.empty();
             strip.cell(|ui| {
                 ui.add_space(MACHINE_V_PADDING);
-                ui.label("BPM");
                 ui.add(
                     egui::Slider::new(&mut bpm.0, 20.0..=220.0)
                         .text("BPM")
@@ -264,8 +324,6 @@ fn machine_ui(
                                 ui,
                                 channel_number,
                                 &mut chan_mut,
-                                "♪",
-                                "drum",
                                 0,
                                 i,
                                 &mut tracks,
@@ -310,19 +368,24 @@ fn dark_color(color: impl Into<Rgba>) -> Color32 {
     color.into()
 }
 
+fn contrasty(color: impl Into<Rgba>) -> Color32 {
+    let mut color = Hsva::from(color.into());
+    let brightness = color.v * color.s;
+    color.v = if brightness > 0.3 { 0.2 } else { 0.8 };
+    color.into()
+}
+
 fn channel_view(
     ui: &mut egui::Ui,
     channel_number: usize,
-    muted: &mut Muted,
-    icon: &str,
-    title: &str,
+    muted: &mut ChannelInfo,
     track_id: usize,
     pattern: usize,
     tracks: &mut KiraAssociatedTracks,
     drum_pattern: &mut DrumPattern,
 ) {
     StripBuilder::new(ui)
-        .size(Size::exact(48.0))
+        .size(Size::exact(64.0))
         .vertical(|mut strip| {
             strip.strip(|mut builder| {
                 for size in &CHANNEL_UI_SIZES {
@@ -333,7 +396,7 @@ fn channel_view(
                         shift_color(Pallete::FreshGreen, (channel_number + 1) as f32 * 30.0).into();
                     strip.cell(|mut ui| {
                         let mut track = tracks.0.get_mut(track_id).unwrap();
-                        channel_title_view(&mut ui, icon, title, base_color, &mut track, muted);
+                        channel_title_view(&mut ui, base_color, &mut track, muted);
                     });
                     strip.cell(|mut ui| {
                         track_selector_view(&mut ui, track_id, tracks, drum_pattern);
@@ -352,7 +415,7 @@ fn channel_view(
                             beat_view(
                                 &mut ui,
                                 channel_number,
-                                if muted.0 {
+                                if muted.muted {
                                     muted_color(beat_color)
                                 } else {
                                     light_color(beat_color)
@@ -371,28 +434,29 @@ fn channel_view(
 
 fn channel_title_view(
     ui: &mut egui::Ui,
-    icon: &str,
-    title: &str,
-    color: Rgba,
+    mut color: Rgba,
     track: &mut TrackHandle,
-    muted: &mut Muted,
+    info: &mut ChannelInfo,
 ) {
     let rect = ui.available_rect_before_wrap().shrink(1.0);
     let id = Id::new("channel_title").with(track.id());
     let touch = ui.interact(rect, id, Sense::click());
-    ui.painter().rect_filled(
-        rect,
-        4.0,
-        if muted.0 {
-            dark_color(color)
-        } else {
-            light_color(color)
-        },
-    );
-    ui.label(format!("{} {}", icon, title));
+    color = if info.muted {
+        dark_color(color).into()
+    } else {
+        light_color(color).into()
+    };
+    ui.painter().rect_filled(rect, 4.0, color);
+    // egui::Grid::new(id).show(ui, |ui| {
+    ui.centered_and_justified(|ui| {
+        let text = format!("{}\n{}", &info.name, &info.icon);
+        let text = RichText::new(text).color(contrasty(color));
+        ui.label(text);
+    });
+    // });
     if touch.clicked() {
-        muted.0 = !muted.0;
-        let volume = if muted.0 { 0.0 } else { 1.0 };
+        info.muted = !info.muted;
+        let volume = if info.muted { 0.0 } else { 1.0 };
         track.set_volume(volume, Tween::default());
     }
 }
