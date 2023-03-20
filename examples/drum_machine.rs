@@ -15,14 +15,13 @@ use bevy::{
 };
 use bevy_egui::{
     egui::{self, epaint::Hsva, Pos2, Rgba, Stroke},
-    EguiContexts,
+    EguiContexts, EguiPlugin,
 };
-use bevy_inspector_egui::{egui::RichText, quick::WorldInspectorPlugin};
 use bevy_mod_kira::{
     AddClockEvent, AddTrackEvent, KiraAssociatedClocks, KiraAssociatedTracks, KiraPlugin,
     KiraSoundHandle, PlaySoundEvent, StaticSoundAsset,
 };
-use egui::{Color32, Id, Sense};
+use egui::{Color32, Id, RichText, Sense};
 use egui_extras::{Size, StripBuilder};
 use kira::{
     track::{effect::reverb::ReverbHandle, TrackBuilder, TrackHandle},
@@ -102,18 +101,17 @@ pub fn main() {
             ..default()
         }))
         .add_plugin(KiraPlugin)
-        .add_plugin(WorldInspectorPlugin::new())
-        // .add_plugin(EguiPlugin)
+        .add_plugin(EguiPlugin)
         .add_startup_system(setup_sys)
         .add_system(playback_sys)
         .add_system(apply_levels_sys)
         .add_system(ui_sys)
-        .register_type::<TrackOneReverb>()
+        .register_type::<TrackReverb>()
         .run();
 }
 
 #[derive(Component, Reflect)]
-struct TrackOneReverb(#[reflect(ignore)] ReverbHandle);
+struct TrackReverb(#[reflect(ignore)] ReverbHandle);
 
 fn add_instrument_channel(
     asset: &str,
@@ -141,7 +139,7 @@ fn add_instrument_channel(
         let mut track = TrackBuilder::new().volume(volume);
         let reverb_handle = track.add_effect(reverb);
         ev_tracks.send(AddTrackEvent::new(channel.id(), track));
-        channel.insert(TrackOneReverb(reverb_handle));
+        channel.insert(TrackReverb(reverb_handle));
         channel.with_children(|parent| {
             parent.spawn(default_pattern.into());
         });
@@ -217,6 +215,13 @@ fn playback_sys(
                 continue;
             }
             if (clock_ticks - last_tick) > 1 {
+                // Playback system is not running at the same speed as the clock. Sometimes this
+                // system can miss ticks. This seems to happen often when backgrounding the app.
+                // Since this is a demo it's not imperative that every beat is scheduled but if this
+                // was a real instrument we could work around this by queueing up more than one tick
+                // in advance. That adds complexity around making sure we don't double schedule
+                // a step so we'll just warn for this demo. In practice I haven't seen it miss
+                // a tick when the app is forgrounded.
                 warn!("Missed a tick! cur: {} last: {}", clock_ticks, last_tick);
             }
             last_ticks.0.insert(pattern_id, clock_ticks);
@@ -242,7 +247,7 @@ fn playback_sys(
 
 fn apply_levels_sys(
     mut channels: Query<
-        (&ChannelInfo, &mut KiraAssociatedTracks, &mut TrackOneReverb),
+        (&ChannelInfo, &mut KiraAssociatedTracks, &mut TrackReverb),
         Changed<ChannelInfo>,
     >,
 ) {
@@ -256,6 +261,7 @@ fn apply_levels_sys(
 }
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 enum Pallete {
     FreshGreen = 0x99dd55,
     LeafGreen = 0x44dd88,
@@ -394,7 +400,6 @@ fn machine_ui(
 
 fn shift_color(color: impl Into<Rgba>, degrees: f32) -> Color32 {
     let mut color = Hsva::from(color.into());
-    // H is between 0 and 1, so we need to multiply by 360 to get degrees.
     color.h = color.h + (degrees / 360.0);
     if color.h > 1.0 {
         color.h = color.h - 1.0;
@@ -504,11 +509,12 @@ fn channel_view(
 }
 
 fn control_legend_view(ui: &mut egui::Ui) {
+    let padding_x = ui.spacing().item_spacing.x;
     let sizes = [
         *&CHANNEL_UI_SIZES[0],
         *&CHANNEL_UI_SIZES[1],
         *&CHANNEL_UI_SIZES[2],
-        *&CHANNEL_UI_SIZES[3] * 4.0,
+        (*&CHANNEL_UI_SIZES[3] + padding_x) * 4.0,
     ];
     StripBuilder::new(ui)
         .size(Size::exact(32.0))
@@ -563,13 +569,11 @@ fn channel_title_view(
         light_color(color).into()
     };
     ui.painter().rect_filled(rect, 4.0, color);
-    // egui::Grid::new(id).show(ui, |ui| {
     ui.centered_and_justified(|ui| {
         let text = format!("{}\n{}", &info.name, &info.icon);
         let text = RichText::new(text).color(contrasty(color));
         ui.label(text);
     });
-    // });
     if touch.clicked() {
         info.muted = !info.muted;
     }
@@ -621,10 +625,8 @@ fn beat_view(
     steps: &mut [bool; 4],
 ) {
     ui.columns(4, |columns| {
-        // debug!("beat_view: beat={}, steps={:?}", beat, steps);
         for (i, ui) in columns.iter_mut().enumerate() {
             let id = Id::new("drum_step").with((channel_num, pattern, beat, i));
-            // dbg!(id);
             let target = ui.interact(ui.available_rect_before_wrap(), id, Sense::click());
             ui.painter().rect_filled(
                 ui.available_rect_before_wrap().shrink(1.0),
@@ -635,7 +637,6 @@ fn beat_view(
                 steps[i] = !steps[i];
             }
         }
-        // debug!("beat_view end: beat={}, steps={:?}", beat, steps);
     });
     let rect = ui.available_rect_before_wrap();
     let r = rect.right() + 4.0;
