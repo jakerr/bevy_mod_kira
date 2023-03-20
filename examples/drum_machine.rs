@@ -5,7 +5,8 @@ use std::ops::RangeInclusive;
 use bevy::{
     ecs::system::EntityCommands,
     prelude::{
-        default, error, warn, App, AssetServer, Assets, BuildChildren, Changed, Children, Commands, Component, Entity, EventWriter, Local, Parent, PluginGroup, Query, Res,
+        default, error, warn, App, AssetServer, Assets, BuildChildren, Changed, Children, Commands,
+        Component, Entity, EventWriter, Local, Parent, PluginGroup, Query, Res,
     },
     reflect::Reflect,
     utils::HashMap,
@@ -24,10 +25,7 @@ use bevy_mod_kira::{
 use egui::{Color32, Id, Sense};
 use egui_extras::{Size, StripBuilder};
 use kira::{
-    track::{
-        effect::reverb::{ReverbHandle},
-        TrackBuilder, TrackHandle,
-    },
+    track::{effect::reverb::ReverbHandle, TrackBuilder, TrackHandle},
     tween::Tween,
 };
 
@@ -119,6 +117,7 @@ struct TrackOneReverb(#[reflect(ignore)] ReverbHandle);
 
 fn add_instrument_channel(
     asset: &str,
+    icon: &str,
     default_pattern: impl Into<DrumPattern>,
     default_mute: bool,
     parent: &mut EntityCommands,
@@ -131,6 +130,7 @@ fn add_instrument_channel(
         let name = asset.split('.').next().unwrap();
         channel.insert(ChannelInfo {
             name: name.to_string(),
+            icon: icon.to_string(),
             muted: default_mute,
             ..Default::default()
         });
@@ -161,6 +161,7 @@ fn setup_sys(
     ));
     add_instrument_channel(
         "kick.ogg",
+        "♡",
         DEFAULT_KICK,
         false,
         &mut drum_machine,
@@ -169,6 +170,7 @@ fn setup_sys(
     );
     add_instrument_channel(
         "hat.ogg",
+        "☀",
         DEFAULT_HAT,
         false,
         &mut drum_machine,
@@ -177,6 +179,7 @@ fn setup_sys(
     );
     add_instrument_channel(
         "snare.ogg",
+        "⛃",
         DEFAULT_SNARE,
         false,
         &mut drum_machine,
@@ -185,6 +188,7 @@ fn setup_sys(
     );
     add_instrument_channel(
         "hit.ogg",
+        "🔘",
         DEFAULT_HIT,
         true,
         &mut drum_machine,
