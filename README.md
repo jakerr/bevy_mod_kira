@@ -5,8 +5,8 @@ Bevy Mod Kira is a plugin that integrates the Kira audio library with the Bevy g
 The purpose of this plugin is to provide seamless integration of Kira audio library with Bevy game engine. Bevy Mod Kira is designed to be a minimal wrapper so that all of Kira's features can be used directly. The guiding design principal is that any feature supported by Kira should be accessible through this plugin (though it's not quite there yet.)
 
 # Status
-This is a pre-release demo.
-I'd love your feedback. Feel free to open an issue or pull request!
+This is a early release demo with hopes of receiving feedback. The design and API are very likely to
+change. Feel free to open an issue or pull request!
 
 # License
 All code in this repository is dual-licensed under either:
