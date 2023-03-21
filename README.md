@@ -8,6 +8,14 @@ The purpose of this plugin is to provide seamless integration of Kira audio libr
 This is a early release demo with hopes of receiving feedback. The design and API are very likely to
 change. Feel free to open an issue or pull request!
 
+Documentation is still not ready but please see the examples for usage information.
+For an advanced example of usage check out [the drum machine example](examples/drum_machine.rs):
+
+```
+cargo run --release --example drum_machine
+```
+
+
 # License
 All code in this repository is dual-licensed under either:
 
