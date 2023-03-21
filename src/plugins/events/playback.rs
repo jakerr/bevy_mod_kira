@@ -71,10 +71,10 @@ pub(super) fn do_play_sys(
 }
 
 pub(super) fn cleanup_inactive_sounds_sys(
-    _commands: Commands,
+    mut commands: Commands,
     mut query: Query<(Entity, &mut KiraActiveSounds)>,
 ) {
-    for (_eid, mut sounds) in query.iter_mut() {
+    for (eid, mut sounds) in query.iter_mut() {
         // first check for at least one stopped sound before deref mut to avoid spurious change
         // notifications notification. This is not yet profiled so may be a premature optimization.
         // note that `any` is short-circuiting so we don't need to worry about the cost iterating
@@ -89,8 +89,8 @@ pub(super) fn cleanup_inactive_sounds_sys(
                 .0
                 .retain(|sound| sound.state() != PlaybackState::Stopped);
         }
-        // if sounds.0.is_empty() {
-        //     commands.entity(eid).remove::<KiraActiveSounds>();
-        // }
+        if sounds.0.is_empty() {
+            commands.entity(eid).remove::<KiraActiveSounds>();
+        }
     }
 }
