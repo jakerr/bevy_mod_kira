@@ -20,6 +20,8 @@ impl_type_uuid!(KiraStaticSoundAsset, "4e6dfb5e-8196-4974-8790-5bae8c01ac2d");
 
 pub struct StaticSoundFileLoader;
 
+// This method for loading the sound was adapted from the bevy_kira_audio crate:
+// See: https://github.com/NiklasEi/bevy_kira_audio/blob/main/src/source/ogg_loader.rs
 impl AssetLoader for StaticSoundFileLoader {
     fn load<'a>(
         &'a self,
