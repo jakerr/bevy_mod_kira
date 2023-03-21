@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Formatter};
 
 use bevy::{
-    prelude::{debug, Entity, Local, Plugin, Query, Res, ResMut},
+    prelude::{debug, Entity, Local, NonSendMut, Plugin, Query, Res},
     time::Time,
 };
 use kira::manager::AudioManager;
@@ -61,7 +61,7 @@ impl<'a> From<&'a mut KiraContext> for DebugKiraContext<'a> {
 }
 
 fn debug_kira_sys(
-    mut kira: ResMut<KiraContext>,
+    mut kira: NonSendMut<KiraContext>,
     active: Query<(Entity, &KiraActiveSounds)>,
     time: Res<Time>,
     mut looper: Local<TimerMs<1000>>,

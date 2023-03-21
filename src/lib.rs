@@ -1,8 +1,7 @@
 use bevy::{
     app::Plugin,
-    prelude::{warn, AddAsset, Component, Handle, Resource},
+    prelude::{warn, AddAsset, Component, Handle},
     time::Timer,
-    utils::synccell::SyncCell,
 };
 
 use kira::{
@@ -22,7 +21,7 @@ pub struct KiraPlugin;
 
 impl Plugin for KiraPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
-        app.init_resource::<KiraContext>()
+        app.init_non_send_resource::<KiraContext>()
             .add_asset::<KiraStaticSoundAsset>()
             .add_asset_loader(StaticSoundFileLoader)
             .add_plugin(plugins::KiraEventsPlugin);
@@ -30,9 +29,11 @@ impl Plugin for KiraPlugin {
     }
 }
 
-#[derive(Resource)]
+// This is a non-send resource. If we were only targeting desktop we could use a normal resource
+// wrapping a SyncCell since the AudioManager is sync on desktop but that's not true for every
+// platform that we want to support i.e. Android and wasm.
 pub struct KiraContext {
-    manager: Option<SyncCell<AudioManager>>,
+    manager: Option<AudioManager>,
 }
 
 #[derive(Component)]
@@ -45,30 +46,19 @@ impl Default for KiraContext {
             warn!("Error creating KiraContext: {}", error);
         }
         Self {
-            manager: manager.ok().map(SyncCell::new),
+            manager: manager.ok(),
         }
     }
 }
 
 impl KiraContext {
-    pub fn with_manager<T>(&mut self, mut closure: T)
-    where
-        T: FnMut(&mut AudioManager),
-    {
-        if let Some(manager) = &mut self.manager {
-            let exclusive_manager = manager.get();
-            closure(exclusive_manager);
-        }
-    }
-
     // Takes the same params as AudioManager::play calls the internal manager and then converts the handle into a bevy component type.
     pub fn play(
         &mut self,
         sound: StaticSoundData,
     ) -> Result<StaticSoundHandle, PlaySoundError<()>> {
         if let Some(manager) = &mut self.manager {
-            let exclusive_manager = manager.get();
-            exclusive_manager.play(sound)
+            manager.play(sound)
         } else {
             Err(PlaySoundError::IntoSoundError(()))
         }
@@ -76,8 +66,7 @@ impl KiraContext {
 
     pub fn get_manager(&mut self) -> Option<&mut AudioManager> {
         if let Some(manager) = &mut self.manager {
-            let exclusive_manager = manager.get();
-            return Some(exclusive_manager);
+            return Some(manager);
         }
         None
     }

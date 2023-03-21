@@ -13,7 +13,7 @@ rust-version = "1.67.0"
 [dependencies]
 anyhow = "1.0.69"
 bevy = "0.10.0"
-kira = "0.7.2"
+kira = "0.7.3"
 
 [dev-dependencies]
 bevy_egui = "0.20.1"

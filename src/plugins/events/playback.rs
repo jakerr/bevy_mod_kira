@@ -3,7 +3,8 @@ use std::fmt::Formatter;
 
 use bevy::prelude::error;
 use bevy::prelude::EventReader;
-use bevy::prelude::{Commands, Component, Entity, Query, ResMut};
+use bevy::prelude::NonSendMut;
+use bevy::prelude::{Commands, Component, Entity, Query};
 use bevy::reflect::Reflect;
 use kira::sound::static_sound::PlaybackState;
 use kira::sound::SoundData;
@@ -37,7 +38,7 @@ impl Debug for KiraActiveSounds {
 
 pub(super) fn do_play_sys(
     mut commands: Commands,
-    mut kira: ResMut<KiraContext>,
+    mut kira: NonSendMut<KiraContext>,
     mut query: Query<(Entity, Option<&mut KiraActiveSounds>)>,
     mut ev_play: EventReader<KiraPlaySoundEvent>,
 ) {

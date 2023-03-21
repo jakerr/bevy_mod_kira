@@ -196,24 +196,31 @@ fn playback_sys(
         last_ticks.0.insert(chan_id, clock_ticks);
         let next_play_step = clock_ticks as usize % STEPS;
         if pattern.steps[next_play_step] {
-            let sound_asset = assets.get(&sound.0).unwrap();
-            let sound = sound_asset.sound.with_modified_settings(|mut settings| {
-                if let Some(track1) = tracks.0.first() {
-                    // We calculate next_play_step as the the step at current clock time, but we
-                    // want to start the sound right at precise tick so every sound will be
-                    // triggered at a 1 tick offset.
-                    settings = settings.track(track1).start_time(clock.time() + 1)
-                } else {
-                    error!("No track found for sound handle.");
-                }
-                settings
-            });
-            // When we send the play sound event we pass the entity id for the channel. This
-            // instructs the KiraPlugin to associate the playing sound handle with this entity by
-            // inserting a KiraActiveSounds component. That component can be used to adjust various
-            // aspects of the playing sound at runtime. It will automatically be removed when all
-            // sounds associated with the entity have finished playing.
-            ev_play.send(KiraPlaySoundEvent::new(chan_id, sound));
+            if let Some(sound_asset) = assets.get(&sound.0) {
+                let sound = sound_asset.sound.with_modified_settings(|mut settings| {
+                    if let Some(track1) = tracks.0.first() {
+                        // We calculate next_play_step as the the step at current clock time, but we
+                        // want to start the sound right at precise tick so every sound will be
+                        // triggered at a 1 tick offset.
+                        settings = settings.track(track1).start_time(clock.time() + 1)
+                    } else {
+                        error!("No track found for sound handle.");
+                    }
+                    settings
+                });
+
+                // When we send the play sound event we pass the entity id for the channel. This
+                // instructs the KiraPlugin to associate the playing sound handle with this entity by
+                // inserting a KiraActiveSounds component. That component can be used to adjust various
+                // aspects of the playing sound at runtime. It will automatically be removed when all
+                // sounds associated with the entity have finished playing.
+                ev_play.send(KiraPlaySoundEvent::new(chan_id, sound));
+            } else {
+                warn!(
+                    "Sound asset not found for handle: {:?} it may still be loading.",
+                    sound.0
+                );
+            }
         }
     }
 }

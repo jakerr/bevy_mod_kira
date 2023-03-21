@@ -1,6 +1,7 @@
 use bevy::prelude::Events;
 
 use bevy::prelude::error;
+use bevy::prelude::NonSendMut;
 use bevy::prelude::{Commands, Component, Entity, Query, ResMut};
 use bevy::reflect::Reflect;
 
@@ -30,7 +31,7 @@ impl KiraAddClockEvent {
 
 pub(super) fn do_add_clock_sys(
     mut commands: Commands,
-    mut kira: ResMut<KiraContext>,
+    mut kira: NonSendMut<KiraContext>,
     mut query: Query<(Entity, Option<&mut KiraClocks>)>,
     mut ev_add_clock: ResMut<Events<KiraAddClockEvent>>,
 ) {

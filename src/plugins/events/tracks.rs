@@ -1,6 +1,7 @@
 use bevy::prelude::Events;
 
 use bevy::prelude::error;
+use bevy::prelude::NonSendMut;
 use bevy::prelude::{Commands, Component, Entity, Query, ResMut};
 use bevy::reflect::Reflect;
 
@@ -27,7 +28,7 @@ impl KiraAddTrackEvent {
 
 pub(super) fn do_add_track_sys(
     mut commands: Commands,
-    mut kira: ResMut<KiraContext>,
+    mut kira: NonSendMut<KiraContext>,
     mut query: Query<(Entity, Option<&mut KiraTracks>)>,
     mut ev_add_track: ResMut<Events<KiraAddTrackEvent>>,
 ) {
