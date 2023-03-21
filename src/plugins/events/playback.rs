@@ -8,7 +8,7 @@ use bevy::reflect::Reflect;
 use kira::sound::static_sound::PlaybackState;
 use kira::sound::SoundData;
 
-pub use crate::static_sound_loader::{StaticSoundAsset, StaticSoundFileLoader};
+pub use crate::static_sound_loader::{KiraStaticSoundAsset, StaticSoundFileLoader};
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
 
 use crate::KiraContext;
@@ -16,12 +16,12 @@ use crate::KiraContext;
 #[derive(Component, Default, Reflect)]
 pub struct KiraActiveSounds(#[reflect(ignore)] pub Vec<StaticSoundHandle>);
 
-pub struct PlaySoundEvent<D: SoundData = StaticSoundData> {
+pub struct KiraPlaySoundEvent<D: SoundData = StaticSoundData> {
     pub(super) entity: Entity,
     pub(super) sound: D,
 }
 
-impl PlaySoundEvent {
+impl KiraPlaySoundEvent {
     pub fn new(entity: Entity, sound: StaticSoundData) -> Self {
         Self { entity, sound }
     }
@@ -39,7 +39,7 @@ pub(super) fn do_play_sys(
     mut commands: Commands,
     mut kira: ResMut<KiraContext>,
     mut query: Query<(Entity, Option<&mut KiraActiveSounds>)>,
-    mut ev_play: EventReader<PlaySoundEvent>,
+    mut ev_play: EventReader<KiraPlaySoundEvent>,
 ) {
     for event in ev_play.iter() {
         let sound_handle = match kira.play(event.sound.clone()) {

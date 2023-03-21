@@ -10,8 +10,8 @@ use bevy::{
     DefaultPlugins,
 };
 use bevy_mod_kira::{
-    AddTrackEvent, KiraAssociatedTracks, KiraPlugin, KiraSoundHandle, PlaySoundEvent,
-    StaticSoundAsset,
+    KiraAddTrackEvent, KiraTracks, KiraPlugin, KiraSoundHandle, KiraPlaySoundEvent,
+    KiraStaticSoundAsset,
 };
 use kira::{
     track::{effect::reverb::ReverbHandle, TrackBuilder},
@@ -54,7 +54,7 @@ fn setup_sys(mut commands: Commands, loader: Res<AssetServer>, mut time: ResMut<
 fn setup_track_sys(
     mut commands: Commands,
     mut query: Query<(Entity, &KiraSoundHandle)>,
-    mut ev_tracks: EventWriter<AddTrackEvent>,
+    mut ev_tracks: EventWriter<KiraAddTrackEvent>,
     mut done: Local<bool>,
 ) {
     if *done {
@@ -72,7 +72,7 @@ fn setup_track_sys(
         let mut track = TrackBuilder::new();
         let reverb_handle = track.add_effect(reverb);
         commands.entity(eid).insert(TrackOneReverb(reverb_handle));
-        ev_tracks.send(AddTrackEvent::new(eid, track));
+        ev_tracks.send(KiraAddTrackEvent::new(eid, track));
         *done = true;
     }
 }
@@ -99,11 +99,11 @@ fn tweak_reverb_sys(
 }
 
 fn trigger_play_sys(
-    assets: Res<Assets<StaticSoundAsset>>,
-    mut query: Query<(Entity, &KiraSoundHandle, &KiraAssociatedTracks)>,
+    assets: Res<Assets<KiraStaticSoundAsset>>,
+    mut query: Query<(Entity, &KiraSoundHandle, &KiraTracks)>,
     time: Res<Time>,
     mut looper: Local<TimerMs<5000>>,
-    mut ev_play: EventWriter<PlaySoundEvent>,
+    mut ev_play: EventWriter<KiraPlaySoundEvent>,
 ) {
     looper.timer.tick(time.delta());
     if !looper.timer.just_finished() {
@@ -122,7 +122,7 @@ fn trigger_play_sys(
                 }
                 settings
             });
-            ev_play.send(PlaySoundEvent::new(eid, sound));
+            ev_play.send(KiraPlaySoundEvent::new(eid, sound));
         }
     }
 }

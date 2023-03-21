@@ -6,8 +6,8 @@ use bevy_egui::{
     EguiContexts, EguiPlugin,
 };
 use bevy_mod_kira::{
-    AddClockEvent, AddTrackEvent, KiraAssociatedClocks, KiraAssociatedTracks, KiraPlugin,
-    KiraSoundHandle, PlaySoundEvent, StaticSoundAsset,
+    KiraAddClockEvent, KiraAddTrackEvent, KiraClocks, KiraPlaySoundEvent, KiraPlugin,
+    KiraSoundHandle, KiraStaticSoundAsset, KiraTracks,
 };
 use egui::{Color32, Id, RichText, Sense};
 use egui_extras::{Size, StripBuilder};
@@ -116,15 +116,15 @@ struct DrumMachine; // Tag component
 fn setup_sys(
     mut commands: Commands,
     loader: Res<AssetServer>,
-    mut ev_tracks: EventWriter<AddTrackEvent>,
-    mut ev_clocks: EventWriter<AddClockEvent>,
+    mut ev_tracks: EventWriter<KiraAddTrackEvent>,
+    mut ev_clocks: EventWriter<KiraAddClockEvent>,
 ) {
     // Create a top level entity to hold settings relevant to playback.
     let mut drum_machine = commands.spawn(DrumMachine);
     drum_machine.insert(Bpm(BPM));
     // This tells Kira to add a new clock and associate it with the drum machine entity.
-    // Clock handles will be added to the KiraAssociatedClocks component on that entity.
-    ev_clocks.send(AddClockEvent::new(
+    // Clock handles will be added to the KiraClocks component on that entity.
+    ev_clocks.send(KiraAddClockEvent::new(
         drum_machine.id(),
         kira::ClockSpeed::TicksPerSecond(STEP_PER_SEC),
     ));
@@ -170,15 +170,10 @@ fn setup_sys(
 struct LastTicks(HashMap<Entity, u64>);
 
 fn playback_sys(
-    assets: Res<Assets<StaticSoundAsset>>,
-    channels: Query<(
-        Entity,
-        &KiraSoundHandle,
-        &KiraAssociatedTracks,
-        &DrumPattern,
-    )>,
-    clock: Query<&KiraAssociatedClocks>,
-    mut ev_play: EventWriter<PlaySoundEvent>,
+    assets: Res<Assets<KiraStaticSoundAsset>>,
+    channels: Query<(Entity, &KiraSoundHandle, &KiraTracks, &DrumPattern)>,
+    clock: Query<&KiraClocks>,
+    mut ev_play: EventWriter<KiraPlaySoundEvent>,
     mut last_ticks: Local<LastTicks>,
 ) {
     for (chan_id, sound, tracks, pattern) in channels.iter() {
@@ -218,16 +213,13 @@ fn playback_sys(
             // inserting a KiraActiveSounds component. That component can be used to adjust various
             // aspects of the playing sound at runtime. It will automatically be removed when all
             // sounds associated with the entity have finished playing.
-            ev_play.send(PlaySoundEvent::new(chan_id, sound));
+            ev_play.send(KiraPlaySoundEvent::new(chan_id, sound));
         }
     }
 }
 
 fn apply_levels_sys(
-    mut channels: Query<
-        (&ChannelInfo, &mut KiraAssociatedTracks, &mut TrackReverb),
-        Changed<ChannelInfo>,
-    >,
+    mut channels: Query<(&ChannelInfo, &mut KiraTracks, &mut TrackReverb), Changed<ChannelInfo>>,
 ) {
     for (info, mut tracks, mut reverb) in channels.iter_mut() {
         for track in tracks.0.iter_mut() {
@@ -240,9 +232,9 @@ fn apply_levels_sys(
 
 fn ui_sys(
     mut ctx: EguiContexts,
-    mut clocks: Query<&mut KiraAssociatedClocks>,
+    mut clocks: Query<&mut KiraClocks>,
     channel_ids: Query<&Children, With<DrumMachine>>,
-    channels: Query<(Entity, &mut KiraAssociatedTracks, &mut DrumPattern)>,
+    channels: Query<(Entity, &mut KiraTracks, &mut DrumPattern)>,
     chan_mute: Query<&mut ChannelInfo>,
     mut bpm: Query<&mut Bpm>,
 ) {
@@ -285,7 +277,7 @@ fn add_instrument_channel(
     default_mute: bool,
     parent: &mut EntityCommands,
     loader: &AssetServer,
-    ev_tracks: &mut EventWriter<AddTrackEvent>,
+    ev_tracks: &mut EventWriter<KiraAddTrackEvent>,
 ) {
     // The parent passed in here is the drum_machine entity from the setup_sys function.
     // We are adding a child entity to the drum_machine entity for each instrument channel.
@@ -320,8 +312,8 @@ fn add_instrument_channel(
         channel.insert(TrackReverb(reverb_handle));
 
         // We send the track builder to Kira along with the entity id for this channel. Once added
-        // the KiraPlugin will add the track to an AssociatedTracks component on the channel entity.
-        ev_tracks.send(AddTrackEvent::new(channel.id(), track));
+        // the KiraPlugin will add the track to KiraTracks component on the channel entity.
+        ev_tracks.send(KiraAddTrackEvent::new(channel.id(), track));
 
         // Finally we insert the default pattern for this channel.
         channel.insert(default_pattern.into());
@@ -341,7 +333,7 @@ fn machine_ui(
     bpm: &mut Bpm,
     // Used to draw the channels in the correct order.
     channel_ids: Query<&Children, With<DrumMachine>>,
-    mut channels: Query<(Entity, &mut KiraAssociatedTracks, &mut DrumPattern)>,
+    mut channels: Query<(Entity, &mut KiraTracks, &mut DrumPattern)>,
     mut chan_mute: Query<&mut ChannelInfo>,
 ) {
     let padding_x = ui.spacing().item_spacing.x;
@@ -407,7 +399,7 @@ fn channel_view(
     channel_number: u32,
     info: &mut ChannelInfo,
     track_id: usize,
-    tracks: &mut KiraAssociatedTracks,
+    tracks: &mut KiraTracks,
     drum_pattern: &mut DrumPattern,
 ) {
     StripBuilder::new(ui)

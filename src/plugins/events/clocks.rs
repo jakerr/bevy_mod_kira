@@ -7,19 +7,19 @@ use bevy::reflect::Reflect;
 use kira::clock::ClockHandle;
 use kira::ClockSpeed;
 
-pub use crate::static_sound_loader::{StaticSoundAsset, StaticSoundFileLoader};
+pub use crate::static_sound_loader::{KiraStaticSoundAsset, StaticSoundFileLoader};
 
 use crate::KiraContext;
 
 #[derive(Component, Default, Reflect)]
-pub struct KiraAssociatedClocks(#[reflect(ignore)] pub Vec<ClockHandle>);
+pub struct KiraClocks(#[reflect(ignore)] pub Vec<ClockHandle>);
 
-pub struct AddClockEvent {
+pub struct KiraAddClockEvent {
     entity: Entity,
     clock_speed: ClockSpeed,
 }
 
-impl AddClockEvent {
+impl KiraAddClockEvent {
     pub fn new(entity: Entity, clock_speed: ClockSpeed) -> Self {
         Self {
             entity,
@@ -31,8 +31,8 @@ impl AddClockEvent {
 pub(super) fn do_add_clock_sys(
     mut commands: Commands,
     mut kira: ResMut<KiraContext>,
-    mut query: Query<(Entity, Option<&mut KiraAssociatedClocks>)>,
-    mut ev_add_clock: ResMut<Events<AddClockEvent>>,
+    mut query: Query<(Entity, Option<&mut KiraClocks>)>,
+    mut ev_add_clock: ResMut<Events<KiraAddClockEvent>>,
 ) {
     for event in ev_add_clock.drain() {
         if let Some(manager) = kira.get_manager() {
@@ -46,9 +46,7 @@ pub(super) fn do_add_clock_sys(
                             clocks.0.push(clock_handle);
                         }
                         None => {
-                            commands
-                                .entity(eid)
-                                .insert(KiraAssociatedClocks(vec![clock_handle]));
+                            commands.entity(eid).insert(KiraClocks(vec![clock_handle]));
                         }
                     };
                 } else {

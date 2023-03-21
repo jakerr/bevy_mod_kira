@@ -11,7 +11,7 @@ use kira::{
     },
     sound::static_sound::{StaticSoundData, StaticSoundHandle},
 };
-pub use static_sound_loader::{StaticSoundAsset, StaticSoundFileLoader};
+pub use static_sound_loader::{KiraStaticSoundAsset, StaticSoundFileLoader};
 
 mod plugins;
 mod static_sound_loader;
@@ -23,7 +23,7 @@ pub struct KiraPlugin;
 impl Plugin for KiraPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         app.init_resource::<KiraContext>()
-            .add_asset::<StaticSoundAsset>()
+            .add_asset::<KiraStaticSoundAsset>()
             .add_asset_loader(StaticSoundFileLoader)
             .add_plugin(plugins::KiraEventsPlugin);
         // .add_plugin(plugins::KiraDebugPlugin);
@@ -36,7 +36,7 @@ pub struct KiraContext {
 }
 
 #[derive(Component)]
-pub struct KiraSoundHandle(pub Handle<StaticSoundAsset>);
+pub struct KiraSoundHandle(pub Handle<KiraStaticSoundAsset>);
 
 impl Default for KiraContext {
     fn default() -> Self {

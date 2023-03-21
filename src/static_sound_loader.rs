@@ -1,6 +1,6 @@
 use anyhow::Result;
 use bevy::asset::{AssetLoader, LoadContext, LoadedAsset};
-use bevy::prelude::{info};
+use bevy::prelude::info;
 use bevy::reflect::impl_type_uuid;
 use bevy::utils::BoxedFuture;
 use kira::sound::static_sound::{StaticSoundData, StaticSoundSettings};
@@ -15,8 +15,8 @@ where
     pub sound: T,
 }
 
-pub type StaticSoundAsset = SoundAsset<StaticSoundData>;
-impl_type_uuid!(StaticSoundAsset, "4e6dfb5e-8196-4974-8790-5bae8c01ac2d");
+pub type KiraStaticSoundAsset = SoundAsset<StaticSoundData>;
+impl_type_uuid!(KiraStaticSoundAsset, "4e6dfb5e-8196-4974-8790-5bae8c01ac2d");
 
 pub struct StaticSoundFileLoader;
 
@@ -36,7 +36,7 @@ impl AssetLoader for StaticSoundFileLoader {
                 Cursor::new(sound_bytes),
                 StaticSoundSettings::default(),
             )?;
-            load_context.set_default_asset(LoadedAsset::new(StaticSoundAsset { sound }));
+            load_context.set_default_asset(LoadedAsset::new(KiraStaticSoundAsset { sound }));
             Ok(())
         })
     }
