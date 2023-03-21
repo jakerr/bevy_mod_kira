@@ -22,12 +22,6 @@ const STEP_PER_BEAT: usize = 4;
 const STEPS: usize = STEP_PER_BEAT * 4;
 const STEP_PER_SEC: f64 = BPS * STEP_PER_BEAT as f64;
 
-struct DefaultPattern(u16);
-const DEFAULT_KICK: DefaultPattern = DefaultPattern(0b1001_0000_1001_0000);
-const DEFAULT_HAT: DefaultPattern = DefaultPattern(0b0010_1010_1010_1111);
-const DEFAULT_SNARE: DefaultPattern = DefaultPattern(0b0000_1000_0000_1000);
-const DEFAULT_HIT: DefaultPattern = DefaultPattern(0b0010_0000_1101_0101);
-
 const CHANNEL_ROW_HEIGHT: f32 = 64.0;
 const CHANNEL_UI_SIZES: [f32; 7] = [64.0, 18.0, 18.0, 128.0, 128.0, 128.0, 128.0];
 const MACHINE_H_PADDING: f32 = 32.0;
@@ -36,6 +30,15 @@ const MACHINE_V_PADDING: f32 = 6.0;
 fn steps_per_sec(bpm: f64) -> f64 {
     bpm / 60.0 * STEP_PER_BEAT as f64
 }
+
+// 16 bit boolean constants are a convienient way to represent 16 step patterns when defining
+// defaults. But for use in the UI it's more convienient to hold them as an array of bools in the
+// component so click handlers can just be given one &mut bool to flip.
+struct DefaultPattern(u16);
+const DEFAULT_KICK: DefaultPattern = DefaultPattern(0b1001_0000_1001_0000);
+const DEFAULT_HAT: DefaultPattern = DefaultPattern(0b0010_1010_1010_1111);
+const DEFAULT_SNARE: DefaultPattern = DefaultPattern(0b0000_1000_0000_1000);
+const DEFAULT_HIT: DefaultPattern = DefaultPattern(0b0010_0000_1101_0101);
 
 impl From<DefaultPattern> for DrumPattern {
     fn from(p: DefaultPattern) -> Self {
@@ -48,15 +51,15 @@ impl From<DefaultPattern> for DrumPattern {
     }
 }
 
-#[derive(Component, Default, Reflect)]
+#[derive(Component, Default)]
 struct DrumPattern {
     steps: [bool; STEPS],
 }
 
-#[derive(Component, Reflect)]
+#[derive(Component)]
 struct Bpm(f64);
 
-#[derive(Component, Reflect)]
+#[derive(Component)]
 struct ChannelInfo {
     name: String,
     muted: bool,
@@ -97,12 +100,14 @@ pub fn main() {
         .add_system(playback_sys)
         .add_system(apply_levels_sys)
         .add_system(ui_sys)
-        .register_type::<TrackReverb>()
         .run();
 }
 
-#[derive(Component, Reflect)]
-struct TrackReverb(#[reflect(ignore)] ReverbHandle);
+#[derive(Component)]
+struct TrackReverb(ReverbHandle);
+
+#[derive(Component)]
+struct DrumMachine; // Tag component
 
 //
 // Systems
@@ -114,7 +119,11 @@ fn setup_sys(
     mut ev_tracks: EventWriter<AddTrackEvent>,
     mut ev_clocks: EventWriter<AddClockEvent>,
 ) {
-    let mut drum_machine = commands.spawn(Bpm(BPM));
+    // Create a top level entity to hold settings relevant to playback.
+    let mut drum_machine = commands.spawn(DrumMachine);
+    drum_machine.insert(Bpm(BPM));
+    // This tells Kira to add a new clock and associate it with the drum machine entity.
+    // Clock handles will be added to the KiraAssociatedClocks component on that entity.
     ev_clocks.send(AddClockEvent::new(
         drum_machine.id(),
         kira::ClockSpeed::TicksPerSecond(STEP_PER_SEC),
@@ -162,47 +171,54 @@ struct LastTicks(HashMap<Entity, u64>);
 
 fn playback_sys(
     assets: Res<Assets<StaticSoundAsset>>,
-    channels: Query<(&KiraSoundHandle, &KiraAssociatedTracks)>,
-    patterns: Query<(Entity, &DrumPattern, &Parent)>,
+    channels: Query<(
+        Entity,
+        &KiraSoundHandle,
+        &KiraAssociatedTracks,
+        &DrumPattern,
+    )>,
     clock: Query<&KiraAssociatedClocks>,
     mut ev_play: EventWriter<PlaySoundEvent>,
     mut last_ticks: Local<LastTicks>,
 ) {
-    for (pattern_id, pattern, parent) in patterns.iter() {
-        if let Ok((sound, tracks)) = channels.get(parent.get()) {
-            let clock = clock.single().0.first().unwrap();
-            let clock_ticks = clock.time().ticks;
-            let last_tick = last_ticks.0.get(&pattern_id).copied().unwrap_or(u64::MAX);
-            if clock_ticks == last_tick {
-                continue;
-            }
-            if (clock_ticks - last_tick) > 1 {
-                // Playback system is not running at the same speed as the clock. Sometimes this
-                // system can miss ticks. This seems to happen often when backgrounding the app.
-                // Since this is a demo it's not imperative that every beat is scheduled but if this
-                // was a real instrument we could work around this by queueing up more than one tick
-                // in advance. That adds complexity around making sure we don't double schedule
-                // a step so we'll just warn for this demo. In practice I haven't seen it miss
-                // a tick when the app is forgrounded.
-                warn!("Missed a tick! cur: {} last: {}", clock_ticks, last_tick);
-            }
-            last_ticks.0.insert(pattern_id, clock_ticks);
-            let next_play_step = clock_ticks as usize % STEPS;
-            if pattern.steps[next_play_step] {
-                let sound_asset = assets.get(&sound.0).unwrap();
-                let sound = sound_asset.sound.with_modified_settings(|mut settings| {
-                    if let Some(track1) = tracks.0.first() {
-                        // We calculate next_play_step as the the step at current clock time, but we
-                        // want to start the sound right at precise tick so every sound will be
-                        // triggered at a 1 tick offset.
-                        settings = settings.track(track1).start_time(clock.time() + 1)
-                    } else {
-                        error!("No track found for sound handle.");
-                    }
-                    settings
-                });
-                ev_play.send(PlaySoundEvent::new(pattern_id, sound));
-            }
+    for (chan_id, sound, tracks, pattern) in channels.iter() {
+        let clock = clock.single().0.first().unwrap();
+        let clock_ticks = clock.time().ticks;
+        let last_tick = last_ticks.0.get(&chan_id).copied().unwrap_or(u64::MAX);
+        if clock_ticks == last_tick {
+            continue;
+        }
+        if (clock_ticks - last_tick) > 1 {
+            // Playback system is not running at the same speed as the clock. Sometimes this
+            // system can miss ticks. This seems to happen often when backgrounding the app.
+            // Since this is a demo it's not imperative that every beat is scheduled but if this
+            // was a real instrument we could work around this by queueing up more than one tick
+            // in advance. That adds complexity around making sure we don't double schedule
+            // a step so we'll just warn for this demo. In practice I haven't seen it miss
+            // a tick when the app is forgrounded.
+            warn!("Missed a tick! cur: {} last: {}", clock_ticks, last_tick);
+        }
+        last_ticks.0.insert(chan_id, clock_ticks);
+        let next_play_step = clock_ticks as usize % STEPS;
+        if pattern.steps[next_play_step] {
+            let sound_asset = assets.get(&sound.0).unwrap();
+            let sound = sound_asset.sound.with_modified_settings(|mut settings| {
+                if let Some(track1) = tracks.0.first() {
+                    // We calculate next_play_step as the the step at current clock time, but we
+                    // want to start the sound right at precise tick so every sound will be
+                    // triggered at a 1 tick offset.
+                    settings = settings.track(track1).start_time(clock.time() + 1)
+                } else {
+                    error!("No track found for sound handle.");
+                }
+                settings
+            });
+            // When we send the play sound event we pass the entity id for the channel. This
+            // instructs the KiraPlugin to associate the playing sound handle with this entity by
+            // inserting a KiraActiveSounds component. That component can be used to adjust various
+            // aspects of the playing sound at runtime. It will automatically be removed when all
+            // sounds associated with the entity have finished playing.
+            ev_play.send(PlaySoundEvent::new(chan_id, sound));
         }
     }
 }
@@ -225,10 +241,10 @@ fn apply_levels_sys(
 fn ui_sys(
     mut ctx: EguiContexts,
     mut clocks: Query<&mut KiraAssociatedClocks>,
-    channels: Query<(Entity, &mut KiraAssociatedTracks, &Children)>,
+    channel_ids: Query<&Children, With<DrumMachine>>,
+    channels: Query<(Entity, &mut KiraAssociatedTracks, &mut DrumPattern)>,
     chan_mute: Query<&mut ChannelInfo>,
     mut bpm: Query<&mut Bpm>,
-    patterns: Query<(Entity, &mut DrumPattern)>,
 ) {
     let mut first_clock = clocks.iter_mut().next();
     let clock = first_clock.as_mut().map(|c| &mut c.0[0]);
@@ -250,7 +266,7 @@ fn ui_sys(
                             kira::ClockSpeed::TicksPerSecond(steps_per_sec(bpm.0)),
                             Tween::default(),
                         );
-                        machine_ui(ui, &mut bpm, channels, chan_mute, patterns);
+                        machine_ui(ui, &mut bpm, channel_ids, channels, chan_mute);
                     });
                 }
                 strip.empty();
@@ -271,27 +287,44 @@ fn add_instrument_channel(
     loader: &AssetServer,
     ev_tracks: &mut EventWriter<AddTrackEvent>,
 ) {
-    let a = loader.load(asset);
+    // The parent passed in here is the drum_machine entity from the setup_sys function.
+    // We are adding a child entity to the drum_machine entity for each instrument channel.
     parent.with_children(|parent| {
+        let a = loader.load(asset);
         let mut channel = parent.spawn(KiraSoundHandle(a));
         let name = asset.split('.').next().unwrap();
+
+        // This ChannelInfo component is defined specifically for this demo. It is used to hold the
+        // channel state to show in the UI and to hold the volume level and mute status of the
+        // channel which will be applied every frame by the apply_levels_sys system.
         channel.insert(ChannelInfo {
             name: name.to_string(),
             icon: icon.to_string(),
             muted: default_mute,
             ..Default::default()
         });
+
+        // Next we add a track to the channel and adding a reverb effect to the track. Both of these
+        // steps are optional. If you don't specify a track when playing a sound it will play on
+        // a default Main track.
         let reverb = kira::track::effect::reverb::ReverbBuilder::new()
             .mix(0.0)
             .stereo_width(0.0);
         let volume = if default_mute { 0.0 } else { 1.0 };
         let mut track = TrackBuilder::new().volume(volume);
+
+        // The reverb handle is returned directly from the track builder even before we've sent it
+        // to Kira so it's our responsibility to hold onto it in a component if we want to be able
+        // to modify it later.
         let reverb_handle = track.add_effect(reverb);
-        ev_tracks.send(AddTrackEvent::new(channel.id(), track));
         channel.insert(TrackReverb(reverb_handle));
-        channel.with_children(|parent| {
-            parent.spawn(default_pattern.into());
-        });
+
+        // We send the track builder to Kira along with the entity id for this channel. Once added
+        // the KiraPlugin will add the track to an AssociatedTracks component on the channel entity.
+        ev_tracks.send(AddTrackEvent::new(channel.id(), track));
+
+        // Finally we insert the default pattern for this channel.
+        channel.insert(default_pattern.into());
     });
 }
 
@@ -306,9 +339,10 @@ fn container_size_for_cells(sizes: &[f32], padding: f32) -> f32 {
 fn machine_ui(
     mut ui: &mut egui::Ui,
     bpm: &mut Bpm,
-    mut channels: Query<(Entity, &mut KiraAssociatedTracks, &Children)>,
+    // Used to draw the channels in the correct order.
+    channel_ids: Query<&Children, With<DrumMachine>>,
+    mut channels: Query<(Entity, &mut KiraAssociatedTracks, &mut DrumPattern)>,
     mut chan_mute: Query<&mut ChannelInfo>,
-    mut patterns: Query<(Entity, &mut DrumPattern)>,
 ) {
     let padding_x = ui.spacing().item_spacing.x;
     let padding_y = ui.spacing().item_spacing.y;
@@ -340,24 +374,24 @@ fn machine_ui(
                                     .clamp_to_range(true),
                             );
                             ui.add_space(10.0);
-                            // Visit tracks patterns in order.
-                            for (channel_number, (chan_id, mut tracks, children)) in
-                                channels.iter_mut().enumerate()
+                            // Visit channels in order of the drum machine container.
+                            let chan_ids = channel_ids.single();
+                            let mut in_order = channels.iter_many_mut(chan_ids);
+
+                            let mut chan_number = 0;
+                            while let Some((chan_id, mut tracks, mut pattern)) =
+                                in_order.fetch_next()
                             {
-                                for (i, child) in children.iter().enumerate() {
-                                    if let Ok((_eid, mut pattern)) = patterns.get_mut(*child) {
-                                        let mut chan_mut = chan_mute.get_mut(chan_id).unwrap();
-                                        channel_view(
-                                            ui,
-                                            channel_number,
-                                            &mut chan_mut,
-                                            0,
-                                            i,
-                                            &mut tracks,
-                                            &mut pattern,
-                                        );
-                                    }
-                                }
+                                let mut chan_mut = chan_mute.get_mut(chan_id).unwrap();
+                                channel_view(
+                                    ui,
+                                    chan_number,
+                                    &mut chan_mut,
+                                    0,
+                                    &mut tracks,
+                                    &mut pattern,
+                                );
+                                chan_number += 1;
                             }
                             control_legend_view(ui);
                         });
@@ -370,10 +404,9 @@ fn machine_ui(
 
 fn channel_view(
     ui: &mut egui::Ui,
-    channel_number: usize,
+    channel_number: u32,
     info: &mut ChannelInfo,
     track_id: usize,
-    pattern: usize,
     tracks: &mut KiraAssociatedTracks,
     drum_pattern: &mut DrumPattern,
 ) {
@@ -429,7 +462,6 @@ fn channel_view(
                                     light_color(beat_color)
                                 },
                                 dark_color(beat_color),
-                                pattern,
                                 beat,
                                 this_beat,
                             );
@@ -549,16 +581,15 @@ fn track_fader_view(
 
 fn beat_view(
     ui: &mut egui::Ui,
-    channel_num: usize,
+    channel_num: u32,
     on_color: Color32,
     off_color: Color32,
-    pattern: usize,
     beat: usize,
     steps: &mut [bool],
 ) {
     ui.columns(4, |columns| {
         for (i, ui) in columns.iter_mut().enumerate() {
-            let id = Id::new("drum_step").with((channel_num, pattern, beat, i));
+            let id = Id::new("drum_step").with((channel_num, beat, i));
             let target = ui.interact(ui.available_rect_before_wrap(), id, Sense::click());
             ui.painter().rect_filled(
                 ui.available_rect_before_wrap().shrink(1.0),
