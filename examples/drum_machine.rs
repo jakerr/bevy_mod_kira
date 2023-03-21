@@ -1,18 +1,6 @@
-#![feature(split_array)]
-
 use std::ops::RangeInclusive;
 
-use bevy::{
-    ecs::system::EntityCommands,
-    prelude::{
-        default, error, warn, App, AssetServer, Assets, BuildChildren, Changed, Children, Commands,
-        Component, Entity, EventWriter, Local, Parent, PluginGroup, Query, Res,
-    },
-    reflect::Reflect,
-    utils::HashMap,
-    window::{PresentMode, Window, WindowPlugin},
-    DefaultPlugins,
-};
+use bevy::{ecs::system::EntityCommands, prelude::*, utils::HashMap};
 use bevy_egui::{
     egui::{self, epaint::Hsva, Pos2, Rgba, Stroke},
     EguiContexts, EguiPlugin,
@@ -95,7 +83,6 @@ pub fn main() {
             primary_window: Some(Window {
                 title: "Bevy mod Kira - Drum Machine".into(),
                 resolution: (800., 460.).into(),
-                present_mode: PresentMode::AutoVsync,
                 // Tells wasm to resize the window according to the available canvas
                 fit_canvas_to_parent: true,
                 // Tells wasm not to override default event handling, like F5, Ctrl+R etc.
@@ -432,8 +419,7 @@ fn channel_view(
                                     shift_color(beat_color, (channel_number + 1) as f32 * 12.0)
                                         .into();
                             };
-                            let (_, tail) = steps.split_at_mut(beat * 4);
-                            let (this_beat, _) = tail.split_array_mut();
+                            let this_beat = &mut steps[beat * 4..(beat + 1) * 4];
                             beat_view(
                                 &mut ui,
                                 channel_number,
@@ -568,7 +554,7 @@ fn beat_view(
     off_color: Color32,
     pattern: usize,
     beat: usize,
-    steps: &mut [bool; 4],
+    steps: &mut [bool],
 ) {
     ui.columns(4, |columns| {
         for (i, ui) in columns.iter_mut().enumerate() {
