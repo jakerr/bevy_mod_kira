@@ -2,7 +2,7 @@
 name = "bevy_mod_kira"
 version = "0.1.0"
 edition = "2021"
-categories = ["game-engines", "audio", "sound"]
+categories = ["game-engines", "multimedia::audio"]
 description = "A plugin that integrates the Kira audio library for use in the Bevy game engine"
 keywords = ["game", "bevy", "kira", "audio", "sound"]
 license = "MIT OR Apache-2.0"
