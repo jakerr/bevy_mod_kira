@@ -18,3 +18,4 @@ kira = "0.7.3"
 [dev-dependencies]
 bevy_egui = "0.20.1"
 egui_extras = "0.21.0"
+ringbuf = "0.3.2"
