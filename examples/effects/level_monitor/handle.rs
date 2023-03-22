@@ -1,17 +1,16 @@
-use ringbuf::{HeapConsumer, HeapProducer};
+use ringbuf::HeapConsumer;
 
-use kira::{tween::Tween, CommandError, Volume};
+use kira::CommandError;
 
 use super::LevelSample;
 
-/// Controls a volume control effect.
-pub struct LevelMonitorHandle {
-    pub(super) sample_consumer: HeapConsumer<LevelSample>,
+// Receives samples from the audio thread in chunks of N frames.
+pub struct LevelMonitorHandle<const N: usize> {
+    pub(super) sample_consumer: HeapConsumer<LevelSample<N>>,
 }
 
-impl LevelMonitorHandle {
-    /// Sets the volume adjustment to apply to input audio.
-    pub fn get_sample(&mut self) -> Result<LevelSample, CommandError> {
+impl<const N: usize> LevelMonitorHandle<N> {
+    pub fn get_sample(&mut self) -> Result<LevelSample<N>, CommandError> {
         if let Some(sample) = self.sample_consumer.pop() {
             Ok(sample)
         } else {

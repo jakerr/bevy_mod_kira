@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use bevy_egui::{
     egui::{
         self,
-        plot::{BarChart, HLine},
+        plot::{BarChart, HLine, LineStyle},
     },
     EguiContexts, EguiPlugin,
 };
@@ -12,20 +12,21 @@ use bevy_mod_kira::{
     KiraAddTrackEvent, KiraPlaySoundEvent, KiraPlugin, KiraSoundHandle, KiraStaticSoundAsset,
     KiraTracks,
 };
-use kira::track::{effect::reverb::ReverbHandle, TrackBuilder};
+use kira::track::TrackBuilder;
 
 mod effects;
 use effects::{LevelMonitorBuilder, LevelMonitorHandle};
+const SAMPLES: usize = 16;
+mod color_utils;
+use color_utils::*;
 
 pub fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Bevy mod Kira - Spectral Analysis".into(),
+                title: "Bevy mod Kira - Level Monitor".into(),
                 resolution: (800., 460.).into(),
-                // Tells wasm to resize the window according to the available canvas
                 fit_canvas_to_parent: true,
-                // Tells wasm not to override default event handling, like F5, Ctrl+R etc.
                 prevent_default_event_handling: false,
                 ..default()
             }),
@@ -53,103 +54,144 @@ impl<const N: i32> Default for TimerMs<N> {
 }
 
 #[derive(Component)]
-struct LevelsHandle(LevelMonitorHandle);
+struct LevelsHandle<const N: usize>(LevelMonitorHandle<N>);
+
+#[derive(Component)]
+struct Panning(f64);
 
 fn setup_sys(
     mut commands: Commands,
     loader: Res<AssetServer>,
     mut ev_tracks: ResMut<Events<KiraAddTrackEvent>>,
 ) {
-    let a = loader.load("sfx.ogg");
-    // Creates an entity with a KiraSoundHandle component the sound handle will eventually resolve
-    // to the KiraStaticSoundAsset once the asset has loaded.
+    // See the play_sound.rs example for more detailed comments on how to load and play sounds.
+    let a = loader.load("hit.ogg");
     let mut entity = commands.spawn(KiraSoundHandle(a));
 
-    // Next we add a track to the channel and adding a reverb effect to the track. Both of these
-    // steps are optional. If you don't specify a track when playing a sound it will play on
-    // a default Main track.
-    let monitor = LevelMonitorBuilder::new(1.0);
+    // This LevelMonitorBuilder is defined in the examples directory. We're defined this custom
+    // effect type to extract samples from the track's stream so that we can show a level meter.
+    let monitor = LevelMonitorBuilder::<SAMPLES>;
+
     let mut track = TrackBuilder::new();
-
-    // The reverb handle is returned directly from the track builder even before we've sent it
-    // to Kira so it's our responsibility to hold onto it in a component if we want to be able
-    // to modify it later.
     let monitor_handle = track.add_effect(monitor);
-    entity.insert(LevelsHandle(monitor_handle));
 
-    // We send the track builder to Kira along with the entity id for this channel. Once added
-    // the KiraPlugin will add the track to KiraTracks component on the channel entity.
+    // Hold onto the effect handle so that we can exract the samples from it in another system.
+    entity.insert(LevelsHandle(monitor_handle));
+    entity.insert(Panning(0.5));
     ev_tracks.send(KiraAddTrackEvent::new(entity.id(), track));
 }
 
 fn trigger_play_sys(
     assets: Res<Assets<KiraStaticSoundAsset>>,
-    query: Query<(Entity, &KiraSoundHandle, &KiraTracks)>,
+    query: Query<(Entity, &KiraSoundHandle, &KiraTracks, &Panning)>,
     time: Res<Time>,
-    // This timer is used to trigger the sound playback every 5 seconds.
-    mut looper: Local<TimerMs<5000>>,
-    // This event writer is our interface to start sounds with the KiraPlugin.
+    mut looper: Local<TimerMs<1000>>,
     mut ev_play: EventWriter<KiraPlaySoundEvent>,
 ) {
     looper.timer.tick(time.delta());
     if !looper.timer.just_finished() {
         return;
     }
-    for (eid, sound_handle, tracks) in query.iter() {
+    for (eid, sound_handle, tracks, panning) in query.iter() {
         if let Some(sound_asset) = assets.get(&sound_handle.0) {
-            // The KiraPlaySoundEvent takes a entity id and a sound data object. When the sound
-            // begins playing a KiraActiveSounds component will be added (or extended if it already
-            // exists) to the entity for the given id  to contain the sound handle while the sound
-            // plays.
-            //
-            // KiraActiveSounds can later be queried from another system to interact with playing
-            // sounds and perform any number of actions provided by the Kira StaticSoundHandle api.
             let track = &tracks.0[0];
             let sound_data = sound_asset.sound.clone();
-            let sound = sound_data.with_modified_settings(|settings| settings.track(track.id()));
+            let sound = sound_data
+                .with_modified_settings(|settings| settings.track(track.id()).panning(panning.0));
             ev_play.send(KiraPlaySoundEvent::new(eid, sound));
         }
     }
 }
 
 #[derive(Default)]
-struct Peaks(f64, f64);
+struct Peaks {
+    left: f32,
+    right: f32,
+    left_peak: f32,
+    right_peak: f32,
+}
 
-fn ui_sys(mut ctx: EguiContexts, mut query: Query<(&mut LevelsHandle)>, mut peaks: Local<Peaks>) {
-    let mut left = 0.;
-    let mut right = 0.;
-    let mut monitor_handle = query.single_mut();
+fn dbs_from_rms(rms: f32) -> f32 {
+    100.0 + (20.0 * rms.log10()).max(-100.0)
+}
+
+fn ui_sys(
+    mut ctx: EguiContexts,
+    mut query: Query<(&mut LevelsHandle<SAMPLES>, &mut Panning)>,
+    mut peaks: Local<Peaks>,
+) {
+    let (mut monitor_handle, mut panning) = query.single_mut();
+    // Pull a sample containing a window of SAMPLES frames from the LevelMonitor effect.
+    // See the level_monitor/mod.rs file to see how these samples are extracted.
     if let Ok(levels) = monitor_handle.0.get_sample() {
-        left = levels.left;
-        right = levels.right;
-        peaks.0 = if peaks.0 > levels.left_peak {
-            peaks.0 * 0.99
-        } else {
-            levels.left_peak
-        };
-        peaks.1 = if peaks.1 > levels.left_peak {
-            peaks.1 * 0.99
-        } else {
-            levels.left_peak
-        };
+        let samples = levels.window.len() as f32;
+        // Do some math to determine the decible level of the left and right channels.
+        let squares = levels
+            .window
+            .iter()
+            .map(|x| (x.left * x.left, x.right * x.right))
+            .fold((0.0, 0.0), |(l, r), (nl, nr)| (l + nl, r + nr));
+        let rms = ((squares.0 / samples).sqrt(), (squares.1 / samples).sqrt());
+        // 0 - 100 represents -100 to 0 dB
+        let dbs = (dbs_from_rms(rms.0), dbs_from_rms(rms.1));
+
+        let (left, right) = dbs;
+        peaks.left = peaks.left.max(left);
+        peaks.left_peak = peaks.left_peak.max(left);
+        peaks.right = peaks.right.max(right);
+        peaks.right_peak = peaks.right_peak.max(right);
     }
-    egui::Window::new("Spectral Analysis")
-        .default_width(800.0)
-        .default_height(460.0)
+
+    // The rest is just egui code to draw the level meters.
+    let fast_decay = 0.90;
+    let slow_decay = 0.99;
+    peaks.left *= fast_decay;
+    peaks.right *= fast_decay;
+    peaks.right_peak *= slow_decay;
+    peaks.left_peak *= slow_decay;
+    egui::Window::new("Level Monitor")
+        .default_width(600.0)
+        .default_height(400.0)
         .show(ctx.ctx_mut(), |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Panning");
+                ui.add(egui::Slider::new(&mut panning.0, 0.0..=1.0).text("Panning"));
+            });
             // Plot two bars one for left and one for right. Make the heights relative to the left and right levels.
-            let left_bar = egui::plot::Bar::new(-0.5, left);
-            let right_bar = egui::plot::Bar::new(0.5, right);
-            let plot = egui::plot::Plot::new("Bar Chart")
+            let left_bar = egui::plot::Bar::new(-0.5, peaks.left as f64);
+            let right_bar = egui::plot::Bar::new(0.5, peaks.right as f64);
+            let plot = egui::plot::Plot::new("Levels")
                 .legend(egui::plot::Legend::default())
+                .label_formatter(|_name, value| format!("{:.2} db", value.y - 100.0))
+                .show_background(false)
                 .include_x(-1.0)
                 .include_x(1.0)
-                .include_y(0.0)
-                .include_y(1.0);
-            let max_peak = peaks.0.max(peaks.1);
+                .include_y(100.0)
+                .include_y(0.0);
+            ui.painter().rect_filled(
+                ui.available_rect_before_wrap(),
+                0.0,
+                dark_color(Pallete::DeepBlue),
+            );
+            let left_color = Pallete::MintGreen;
+            let right_color = Pallete::AquaBlue;
             plot.show(ui, |plot_ui| {
-                plot_ui.hline(HLine::new(max_peak));
-                plot_ui.bar_chart(BarChart::new(vec![left_bar, right_bar]));
+                plot_ui.hline(
+                    HLine::new(peaks.left_peak)
+                        .style(LineStyle::Dashed { length: 5.0 })
+                        .width(2.0)
+                        .name("Left")
+                        .color(left_color),
+                );
+                plot_ui.hline(
+                    HLine::new(peaks.right_peak)
+                        .style(LineStyle::Dashed { length: 5.0 })
+                        .width(2.0)
+                        .name("Right")
+                        .color(right_color),
+                );
+                plot_ui.bar_chart(BarChart::new(vec![left_bar]).color(left_color));
+                plot_ui.bar_chart(BarChart::new(vec![right_bar]).color(right_color));
             });
         });
 }

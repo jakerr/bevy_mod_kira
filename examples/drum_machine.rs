@@ -2,7 +2,7 @@ use std::ops::RangeInclusive;
 
 use bevy::{ecs::system::EntityCommands, prelude::*, utils::HashMap};
 use bevy_egui::{
-    egui::{self, epaint::Hsva, Pos2, Rgba, Stroke},
+    egui::{self, Pos2, Rgba, Stroke},
     EguiContexts, EguiPlugin,
 };
 use bevy_mod_kira::{
@@ -15,6 +15,9 @@ use kira::{
     track::{effect::reverb::ReverbHandle, TrackBuilder, TrackHandle},
     tween::Tween,
 };
+
+mod color_utils;
+use color_utils::*;
 
 const BPM: f64 = 90.0;
 const BPS: f64 = BPM / 60.0;
@@ -612,73 +615,4 @@ fn beat_view(
             Stroke::new(1.0, Color32::DARK_GRAY),
         );
     }
-}
-
-//
-// Color utils
-//
-
-#[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
-enum Pallete {
-    FreshGreen = 0x99dd55,
-    LeafGreen = 0x44dd88,
-    MintGreen = 0x22ccbb,
-    AquaBlue = 0x0099cc,
-    DeepBlue = 0x3366bb,
-    GrapePurple = 0x663399,
-}
-
-impl From<Pallete> for Rgba {
-    fn from(p: Pallete) -> Self {
-        let col = p as u32;
-        let r: u8 = ((col >> 16) & 0xff) as u8;
-        let g: u8 = ((col >> 8) & 0xff) as u8;
-        let b: u8 = (col & 0xff) as u8;
-        Rgba::from_srgba_unmultiplied(r, g, b, 255)
-    }
-}
-
-impl From<Pallete> for Color32 {
-    fn from(p: Pallete) -> Self {
-        let rgb: Rgba = p.into();
-        rgb.into()
-    }
-}
-
-fn shift_color(color: impl Into<Rgba>, degrees: f32) -> Color32 {
-    let mut color = Hsva::from(color.into());
-    color.h = color.h + (degrees / 360.0);
-    if color.h > 1.0 {
-        color.h = color.h - 1.0;
-    }
-    color.into()
-}
-
-fn light_color(color: impl Into<Rgba>) -> Color32 {
-    let mut color = Hsva::from(color.into());
-    color.s = color.s * 0.8;
-    color.v = color.v * 0.70;
-    color.into()
-}
-
-fn muted_color(color: impl Into<Rgba>) -> Color32 {
-    let mut color = Hsva::from(color.into());
-    color.s = color.s * 0.35;
-    color.v = color.v * 0.30;
-    color.into()
-}
-
-fn dark_color(color: impl Into<Rgba>) -> Color32 {
-    let mut color = Hsva::from(color.into());
-    color.s = color.s * 0.35;
-    color.v = color.v * 0.10;
-    color.into()
-}
-
-fn contrasty(color: impl Into<Rgba>) -> Color32 {
-    let mut color = Hsva::from(color.into());
-    let brightness = color.v * color.s;
-    color.v = if brightness > 0.3 { 0.2 } else { 0.8 };
-    color.into()
 }
