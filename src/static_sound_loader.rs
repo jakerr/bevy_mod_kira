@@ -44,6 +44,17 @@ impl AssetLoader for StaticSoundFileLoader {
     }
 
     fn extensions(&self) -> &[&str] {
-        &["ogg"]
+        &[
+            #[cfg(feature = "ogg")]
+            "ogg",
+            "oga",
+            "spx",
+            #[cfg(feature = "flac")]
+            "flac",
+            #[cfg(feature = "mp3")]
+            "mp3",
+            #[cfg(feature = "wav")]
+            "wav",
+        ]
     }
 }
