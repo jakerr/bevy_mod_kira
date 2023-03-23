@@ -32,8 +32,11 @@ where
     pub(super) sound: D,
 }
 
-impl KiraPlaySoundEvent {
-    pub fn new(entity: Entity, sound: StaticSoundData) -> Self {
+impl<D> KiraPlaySoundEvent<D>
+where
+    D: SoundData + Send + Sync + Clone + 'static,
+{
+    pub fn new(entity: Entity, sound: D) -> Self {
         Self { entity, sound }
     }
 }

@@ -3,7 +3,7 @@ use bevy_egui::{
     egui::{self, Color32, RichText},
     EguiContexts, EguiPlugin,
 };
-use bevy_mod_kira::{KiraPlaySoundEvent, KiraPlugin, KiraSoundHandle, KiraStaticSoundAsset};
+use bevy_mod_kira::{KiraPlaySoundEvent, KiraPlugin, KiraStaticSoundAsset, KiraStaticSoundHandle};
 
 mod color_utils;
 use color_utils::*;
@@ -33,7 +33,7 @@ struct FormatInfo {
     base_color: Color32,
     file_name: String,
     enabled: bool,
-    asset: Option<KiraSoundHandle>,
+    asset: Option<KiraStaticSoundHandle>,
 }
 
 #[derive(Component)]
@@ -57,7 +57,7 @@ fn setup_sys(mut commands: Commands, loader: Res<AssetServer>) {
         let color = colors[i % colors.len()];
         let name = format!("say.{}", ext);
         let asset = if enabled {
-            Some(KiraSoundHandle(loader.load(name.clone())))
+            Some(KiraStaticSoundHandle(loader.load(name.clone())))
         } else {
             None
         };

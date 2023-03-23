@@ -8,14 +8,14 @@ use kira::sound::SoundData;
 use std::io::Cursor;
 
 #[derive(Clone)]
-pub struct SoundAsset<T>
+pub struct KiraSoundSource<T>
 where
     T: SoundData + Clone,
 {
     pub sound: T,
 }
 
-pub type KiraStaticSoundAsset = SoundAsset<StaticSoundData>;
+pub type KiraStaticSoundAsset = KiraSoundSource<StaticSoundData>;
 impl_type_uuid!(KiraStaticSoundAsset, "4e6dfb5e-8196-4974-8790-5bae8c01ac2d");
 
 pub struct StaticSoundFileLoader;

@@ -1,7 +1,10 @@
-use std::time::Duration;
+use std::{process::CommandArgs, time::Duration};
 
 use bevy::prelude::*;
-use bevy_mod_kira::{KiraPlaySoundEvent, KiraPlugin, KiraSoundHandle, KiraStaticSoundAsset};
+use bevy_mod_kira::{
+    KiraDynamicSoundHandle, KiraPlaySoundEvent, KiraPlugin, KiraSoundSource, KiraStaticSoundAsset,
+    KiraStaticSoundHandle, MySoundData,
+};
 
 pub fn main() {
     App::new()
@@ -29,17 +32,21 @@ fn setup_sys(mut commands: Commands, loader: Res<AssetServer>) {
     let a = loader.load("sfx.ogg");
     // Creates an entity with a KiraSoundHandle component the sound handle will eventually resolve
     // to the KiraStaticSoundAsset once the asset has loaded.
-    commands.spawn(KiraSoundHandle(a));
+    let d = KiraSoundSource { sound: MySoundData };
+    commands.spawn(KiraStaticSoundHandle(a));
+    commands.spawn(KiraDynamicSoundHandle(d));
 }
 
 fn trigger_play_sys(
     assets: Res<Assets<KiraStaticSoundAsset>>,
-    query: Query<(Entity, &KiraSoundHandle)>,
+    query: Query<(Entity, &KiraStaticSoundHandle)>,
+    dyn_sounds: Query<(Entity, &KiraDynamicSoundHandle<MySoundData>)>,
     time: Res<Time>,
     // This timer is used to trigger the sound playback every 5 seconds.
-    mut looper: Local<TimerMs<5000>>,
+    mut looper: Local<TimerMs<11000>>,
     // This event writer is our interface to start sounds with the KiraPlugin.
     mut ev_play: EventWriter<KiraPlaySoundEvent>,
+    mut ev_play2: EventWriter<KiraPlaySoundEvent<MySoundData>>,
 ) {
     looper.timer.tick(time.delta());
     if !looper.timer.just_finished() {
@@ -55,7 +62,14 @@ fn trigger_play_sys(
             // KiraActiveSounds can later be queried from another system to interact with playing
             // sounds and perform any number of actions provided by the Kira StaticSoundHandle api.
             let sound_data = sound_asset.sound.clone();
-            ev_play.send(KiraPlaySoundEvent::new(eid, sound_data));
+            // ev_play.send(KiraPlaySoundEvent::new(eid, sound_data));
         }
+    }
+
+    for (eid, dyn_sound) in dyn_sounds.iter() {
+        ev_play2.send(KiraPlaySoundEvent::<MySoundData>::new(
+            eid,
+            dyn_sound.0.sound.clone(),
+        ));
     }
 }

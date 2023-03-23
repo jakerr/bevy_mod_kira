@@ -5,16 +5,18 @@ use bevy::{
 };
 use std::{
     any::Any,
+    f64::consts::PI,
     fmt::{Debug, Display},
 };
 
 use kira::{
+    dsp::Frame,
     manager::{
         backend::cpal::CpalBackend, error::PlaySoundError, AudioManager, AudioManagerSettings,
     },
     sound::{
         static_sound::{StaticSoundData, StaticSoundHandle},
-        SoundData,
+        Sound, SoundData,
     },
 };
 pub use static_sound_loader::{KiraStaticSoundAsset, StaticSoundFileLoader};
@@ -23,15 +25,56 @@ mod plugins;
 mod static_sound_loader;
 
 pub use plugins::*;
+pub use static_sound_loader::KiraSoundSource;
 
 pub struct KiraPlugin;
+
+#[derive(Clone)]
+pub struct MySoundData;
+struct MySound(f64);
+pub struct MySoundHandle;
+
+impl Sound for MySound {
+    fn track(&mut self) -> kira::track::TrackId {
+        kira::track::TrackId::Main
+    }
+
+    fn process(
+        &mut self,
+        dt: f64,
+        _clock_info_provider: &kira::clock::clock_info::ClockInfoProvider,
+    ) -> kira::dsp::Frame {
+        self.0 += dt;
+        let middle_c = 261.626;
+        let tone = (self.0 * middle_c * 2.0 * PI).sin() as f32;
+        let progress = self.0 / 10.0;
+        let scaled = 0.6 * tone * (progress * PI).sin() as f32;
+        Frame {
+            left: scaled,
+            right: scaled,
+        }
+    }
+
+    fn finished(&self) -> bool {
+        self.0 > 10.0
+    }
+}
+
+impl SoundData for MySoundData {
+    type Handle = MySoundHandle;
+    type Error = ();
+
+    fn into_sound(self) -> Result<(Box<dyn kira::sound::Sound>, Self::Handle), Self::Error> {
+        Ok((Box::new(MySound(0.0)), MySoundHandle))
+    }
+}
 
 impl Plugin for KiraPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         app.init_non_send_resource::<KiraContext>()
             .add_asset::<KiraStaticSoundAsset>()
             .add_asset_loader(StaticSoundFileLoader)
-            .add_plugin(plugins::KiraEventsPlugin::new());
+            .add_plugin(plugins::KiraEventsPlugin::new().with_sound_data_source::<MySoundData>());
         // .add_plugin(plugins::KiraDebugPlugin);
     }
 }
@@ -44,7 +87,10 @@ pub struct KiraContext {
 }
 
 #[derive(Component)]
-pub struct KiraSoundHandle(pub Handle<KiraStaticSoundAsset>);
+pub struct KiraStaticSoundHandle(pub Handle<KiraStaticSoundAsset>);
+
+#[derive(Component)]
+pub struct KiraDynamicSoundHandle<T: SoundData + Clone>(pub KiraSoundSource<T>);
 
 impl Default for KiraContext {
     fn default() -> Self {
