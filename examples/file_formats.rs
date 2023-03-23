@@ -84,6 +84,7 @@ fn ui_sys(
     egui::CentralPanel::default().show(ctx.ctx_mut(), |ui| {
         ui.vertical_centered_justified(|ui| {
             ui.label(RichText::from("File Formats").size(32.0));
+            let mut some_disabled = false;
             for &format_id in formats.single() {
                 let (eid, info) = query.get(format_id).unwrap();
                 let (name, bg_color, text_color) = if info.enabled {
@@ -91,6 +92,7 @@ fn ui_sys(
                     let bg = light_color(info.base_color);
                     (name, bg, contrasty(bg))
                 } else {
+                    some_disabled = true;
                     let name = format!("{} (not enabled)", info.ext);
                     let bg = Color32::DARK_GRAY;
                     (name, bg, Color32::GRAY)
@@ -118,6 +120,13 @@ fn ui_sys(
                         }
                     }
                 }
+            }
+            if some_disabled {
+                ui.separator();
+                ui.label(
+                    "Some formats are not enabled you can enable them with cargo feature \
+                     flags such as --features=ogg,mp3,wav,flac.",
+                );
             }
         });
     });
