@@ -3,12 +3,19 @@ use bevy::{
     prelude::{error, AddAsset, Component, Handle},
     time::Timer,
 };
+use std::{
+    any::Any,
+    fmt::{Debug, Display},
+};
 
 use kira::{
     manager::{
         backend::cpal::CpalBackend, error::PlaySoundError, AudioManager, AudioManagerSettings,
     },
-    sound::static_sound::{StaticSoundData, StaticSoundHandle},
+    sound::{
+        static_sound::{StaticSoundData, StaticSoundHandle},
+        SoundData,
+    },
 };
 pub use static_sound_loader::{KiraStaticSoundAsset, StaticSoundFileLoader};
 
@@ -24,7 +31,7 @@ impl Plugin for KiraPlugin {
         app.init_non_send_resource::<KiraContext>()
             .add_asset::<KiraStaticSoundAsset>()
             .add_asset_loader(StaticSoundFileLoader)
-            .add_plugin(plugins::KiraEventsPlugin);
+            .add_plugin(plugins::KiraEventsPlugin::new());
         // .add_plugin(plugins::KiraDebugPlugin);
     }
 }
@@ -51,6 +58,55 @@ impl Default for KiraContext {
     }
 }
 
+pub struct KiraEventError<D: SoundData> {
+    message: String,
+    // Because sound data Error type is not constrained to std::error::Error we'll just store the
+    // type name.
+    //
+    // Todo: try making this cause a PlaySoundError instead of a generic error and see if that makes
+    // this easier.
+    cause: Option<D::Error>,
+}
+
+impl<D: SoundData> KiraEventError<D> {
+    pub fn new(message: impl Into<String>, cause: Option<D::Error>) -> Self {
+        Self {
+            message: message.into(),
+            cause,
+        }
+    }
+}
+
+impl<D: SoundData> std::error::Error for KiraEventError<D> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        // We can't extract a cause because the Error type on the SoundData trait insn't constrained
+        // to std::error::Error.
+        None
+    }
+}
+
+impl<D: SoundData> Display for KiraEventError<D> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "error sending event to kira: {}. for sound type: {}, with error type: {}",
+            self.message,
+            std::any::type_name::<D>(),
+            if self.cause.is_some() {
+                std::any::type_name::<D::Error>()
+            } else {
+                "None"
+            },
+        )
+    }
+}
+
+impl<D: SoundData> Debug for KiraEventError<D> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "KiraEventError: {}", self)
+    }
+}
+
 impl KiraContext {
     // Takes the same params as AudioManager::play calls the internal manager and then converts the handle into a bevy component type.
     pub fn play(
@@ -62,6 +118,25 @@ impl KiraContext {
         } else {
             Err(PlaySoundError::IntoSoundError(()))
         }
+    }
+
+    pub fn play_d<D>(&mut self, sound: D) -> Result<D::Handle, KiraEventError<D>>
+    where
+        D: SoundData,
+    {
+        if let Some(manager) = &mut self.manager {
+            return manager.play(sound).map_err(|err| match err {
+                PlaySoundError::SoundLimitReached => {
+                    KiraEventError::new("sound limit reached", None)
+                }
+                PlaySoundError::IntoSoundError(e) => {
+                    KiraEventError::new("into sound error", Some(e))
+                }
+                PlaySoundError::CommandError(_) => KiraEventError::new("command error", None),
+                _ => KiraEventError::new("unknown error", None),
+            });
+        }
+        return Err(KiraEventError::new("no manager", None));
     }
 
     pub fn get_manager(&mut self) -> Option<&mut AudioManager> {

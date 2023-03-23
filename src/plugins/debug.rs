@@ -72,7 +72,7 @@ fn debug_kira_sys(
     }
     let context: DebugKiraContext = kira.as_mut().into();
     for (eid, active) in active.iter() {
-        debug!("Eid: {:?} has {} active sounds.", eid, active.0.len());
+        debug!("Eid: {:?} has {} active sounds.", eid, active.handles.len());
     }
     debug!("Context: {:?}", context);
 }
