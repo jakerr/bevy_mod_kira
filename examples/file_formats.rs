@@ -111,7 +111,7 @@ fn ui_sys(
                 let button = egui::Button::new(text).fill(bg_color);
                 let click = ui.add(button).clicked();
                 if click {
-                    info!("clicked: {}", info.file_name);
+                    debug!("clicked: {}", info.file_name);
                     if let Some(asset) = &info.asset {
                         if let Some(sound_asset) = assets.get(&asset.0) {
                             let sound_data = sound_asset.sound.clone();

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use bevy::asset::{AssetLoader, LoadContext, LoadedAsset};
-use bevy::prelude::info;
+use bevy::prelude::debug;
 use bevy::reflect::impl_type_uuid;
 use bevy::utils::BoxedFuture;
 use kira::sound::static_sound::{StaticSoundData, StaticSoundSettings};
@@ -33,7 +33,7 @@ impl AssetLoader for StaticSoundFileLoader {
             for byte in bytes {
                 sound_bytes.push(*byte);
             }
-            info!("Loading sound with {} bytes", sound_bytes.len());
+            debug!("Loading sound with {} bytes", sound_bytes.len());
             let sound = StaticSoundData::from_cursor(
                 Cursor::new(sound_bytes),
                 StaticSoundSettings::default(),

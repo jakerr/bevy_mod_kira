@@ -1,6 +1,6 @@
 use bevy::{
     app::Plugin,
-    prelude::{warn, AddAsset, Component, Handle},
+    prelude::{error, AddAsset, Component, Handle},
     time::Timer,
 };
 
@@ -43,7 +43,7 @@ impl Default for KiraContext {
     fn default() -> Self {
         let manager = AudioManager::<CpalBackend>::new(AudioManagerSettings::default());
         if let Err(ref error) = manager {
-            warn!("Error creating KiraContext: {}", error);
+            error!("Error creating KiraContext: {}", error);
         }
         Self {
             manager: manager.ok(),
