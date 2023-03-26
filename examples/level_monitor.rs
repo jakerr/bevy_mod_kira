@@ -9,8 +9,8 @@ use bevy_egui::{
     EguiContexts, EguiPlugin,
 };
 use bevy_mod_kira::{
-    KiraAddTrackEvent, KiraPlaySoundEvent, KiraPlugin, KiraSoundHandle, KiraStaticSoundAsset,
-    KiraTracks,
+    KiraAddTrackEvent, KiraPlaySoundEvent, KiraPlugin,
+    KiraStaticSoundAsset, KiraStaticSoundHandle, KiraTracks,
 };
 use kira::track::TrackBuilder;
 
@@ -66,7 +66,7 @@ fn setup_sys(
 ) {
     // See the play_sound.rs example for more detailed comments on how to load and play sounds.
     let a = loader.load("hit.ogg");
-    let mut entity = commands.spawn(KiraSoundHandle(a));
+    let mut entity = commands.spawn(KiraStaticSoundHandle(a));
 
     // This LevelMonitorBuilder is defined in the examples directory. We're defined this custom
     // effect type to extract samples from the track's stream so that we can show a level meter.
@@ -83,7 +83,7 @@ fn setup_sys(
 
 fn trigger_play_sys(
     assets: Res<Assets<KiraStaticSoundAsset>>,
-    query: Query<(Entity, &KiraSoundHandle, &KiraTracks, &Panning)>,
+    query: Query<(Entity, &KiraStaticSoundHandle, &KiraTracks, &Panning)>,
     time: Res<Time>,
     mut looper: Local<TimerMs<1000>>,
     mut ev_play: EventWriter<KiraPlaySoundEvent>,

@@ -6,8 +6,8 @@ use bevy_egui::{
     EguiContexts, EguiPlugin,
 };
 use bevy_mod_kira::{
-    KiraAddClockEvent, KiraAddTrackEvent, KiraClocks, KiraPlaySoundEvent, KiraPlugin,
-    KiraSoundHandle, KiraStaticSoundAsset, KiraTracks,
+    KiraAddClockEvent, KiraAddTrackEvent, KiraClocks, KiraPlaySoundEvent,
+    KiraPlugin, KiraStaticSoundAsset, KiraStaticSoundHandle, KiraTracks,
 };
 use egui::{Color32, Id, RichText, Sense};
 use egui_extras::{Size, StripBuilder};
@@ -174,7 +174,7 @@ struct LastTicks(HashMap<Entity, u64>);
 
 fn playback_sys(
     assets: Res<Assets<KiraStaticSoundAsset>>,
-    channels: Query<(Entity, &KiraSoundHandle, &KiraTracks, &DrumPattern)>,
+    channels: Query<(Entity, &KiraStaticSoundHandle, &KiraTracks, &DrumPattern)>,
     clock: Query<&KiraClocks>,
     mut ev_play: EventWriter<KiraPlaySoundEvent>,
     mut last_ticks: Local<LastTicks>,
@@ -293,7 +293,7 @@ fn add_instrument_channel(
     // We are adding a child entity to the drum_machine entity for each instrument channel.
     parent.with_children(|parent| {
         let a = loader.load(asset);
-        let mut channel = parent.spawn(KiraSoundHandle(a));
+        let mut channel = parent.spawn(KiraStaticSoundHandle(a));
         let name = asset.split('.').next().unwrap();
 
         // This ChannelInfo component is defined specifically for this demo. It is used to hold the

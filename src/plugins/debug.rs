@@ -8,7 +8,7 @@ use kira::manager::AudioManager;
 
 use crate::{KiraContext, TimerMs};
 
-use super::KiraActiveSounds;
+use super::KiraPlayingSounds;
 
 pub struct KiraDebugPlugin;
 
@@ -62,7 +62,7 @@ impl<'a> From<&'a mut KiraContext> for DebugKiraContext<'a> {
 
 fn debug_kira_sys(
     mut kira: NonSendMut<KiraContext>,
-    active: Query<(Entity, &KiraActiveSounds)>,
+    active: Query<(Entity, &KiraPlayingSounds)>,
     time: Res<Time>,
     mut looper: Local<TimerMs<1000>>,
 ) {

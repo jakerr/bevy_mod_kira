@@ -1,7 +1,9 @@
 use std::time::Duration;
 
 use bevy::prelude::*;
-use bevy_mod_kira::{KiraPlaySoundEvent, KiraPlugin, KiraSoundHandle, KiraStaticSoundAsset};
+use bevy_mod_kira::{
+    KiraPlaySoundEvent, KiraPlayingSounds, KiraPlugin, KiraStaticSoundAsset, KiraStaticSoundHandle,
+};
 
 pub fn main() {
     App::new()
@@ -9,6 +11,7 @@ pub fn main() {
         .add_plugin(KiraPlugin)
         .add_startup_system(setup_sys)
         .add_system(trigger_play_sys)
+        .add_system(handles_sys)
         .run();
 }
 
@@ -29,12 +32,12 @@ fn setup_sys(mut commands: Commands, loader: Res<AssetServer>) {
     let a = loader.load("sfx.ogg");
     // Creates an entity with a KiraSoundHandle component the sound handle will eventually resolve
     // to the KiraStaticSoundAsset once the asset has loaded.
-    commands.spawn(KiraSoundHandle(a));
+    commands.spawn(KiraStaticSoundHandle(a));
 }
 
 fn trigger_play_sys(
     assets: Res<Assets<KiraStaticSoundAsset>>,
-    query: Query<(Entity, &KiraSoundHandle)>,
+    query: Query<(Entity, &KiraStaticSoundHandle)>,
     time: Res<Time>,
     // This timer is used to trigger the sound playback every 5 seconds.
     mut looper: Local<TimerMs<5000>>,
@@ -56,6 +59,16 @@ fn trigger_play_sys(
             // sounds and perform any number of actions provided by the Kira StaticSoundHandle api.
             let sound_data = sound_asset.sound.clone();
             ev_play.send(KiraPlaySoundEvent::new(eid, sound_data));
+        }
+    }
+}
+
+fn handles_sys(sounds: Query<&KiraPlayingSounds>) {
+    for active_sounds in sounds.iter() {
+        let mut count = 0usize;
+        for handle in active_sounds.static_handles() {
+            count += 1;
+            info!("Static sound..., {:?}, {}", handle.state(), count);
         }
     }
 }

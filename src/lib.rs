@@ -1,3 +1,6 @@
+use std::any::{Any};
+
+use anyhow::{anyhow, Error};
 use bevy::{
     app::Plugin,
     prelude::{error, AddAsset, Component, Handle},
@@ -8,7 +11,10 @@ use kira::{
     manager::{
         backend::cpal::CpalBackend, error::PlaySoundError, AudioManager, AudioManagerSettings,
     },
-    sound::static_sound::{StaticSoundData, StaticSoundHandle},
+    sound::{
+        static_sound::{PlaybackState, StaticSoundData, StaticSoundHandle},
+        SoundData,
+    },
 };
 pub use static_sound_loader::{KiraStaticSoundAsset, StaticSoundFileLoader};
 
@@ -29,6 +35,63 @@ impl Plugin for KiraPlugin {
     }
 }
 
+pub trait KiraPlayable: Send + Sync + 'static {
+    fn play_in_manager(
+        &self,
+        manager: &mut AudioManager<CpalBackend>,
+    ) -> Result<KiraPlayingSound, Error>;
+}
+
+pub trait Downcastable: Any + Send + Sync {
+    fn as_any(&self) -> &(dyn Any + Send + Sync);
+}
+
+impl<T: Any + Send + Sync> Downcastable for T {
+    fn as_any(&self) -> &(dyn Any + Send + Sync) {
+        self
+    }
+}
+
+pub trait DynamicSoundHandle: Downcastable {
+    fn state(&self) -> PlaybackState;
+}
+
+pub enum KiraPlayingSound {
+    Static(StaticSoundHandle),
+    Dynamic(Box<dyn DynamicSoundHandle>),
+}
+
+impl From<StaticSoundHandle> for KiraPlayingSound {
+    fn from(handle: StaticSoundHandle) -> Self {
+        KiraPlayingSound::Static(handle)
+    }
+}
+
+impl<D> From<D> for KiraPlayingSound
+where
+    D: DynamicSoundHandle,
+{
+    fn from(handle: D) -> Self {
+        KiraPlayingSound::Dynamic(Box::new(handle))
+    }
+}
+
+impl<D: SoundData> KiraPlayable for D
+where
+    D: Send + Sync + Clone + 'static,
+    D::Handle: Into<KiraPlayingSound>,
+{
+    fn play_in_manager(
+        &self,
+        manager: &mut AudioManager<CpalBackend>,
+    ) -> Result<KiraPlayingSound, Error> {
+        // Result<DynHandle, Error> {
+        let res = manager.play::<D>(self.clone());
+        res.map_err(|_e| anyhow!("failed to play sound: {}", std::any::type_name::<D>()))
+            .map(|handle| handle.into())
+    }
+}
+
 // This is a non-send resource. If we were only targeting desktop we could use a normal resource
 // wrapping a SyncCell since the AudioManager is sync on desktop but that's not true for every
 // platform that we want to support i.e. Android and wasm.
@@ -37,7 +100,7 @@ pub struct KiraContext {
 }
 
 #[derive(Component)]
-pub struct KiraSoundHandle(pub Handle<KiraStaticSoundAsset>);
+pub struct KiraStaticSoundHandle(pub Handle<KiraStaticSoundAsset>);
 
 impl Default for KiraContext {
     fn default() -> Self {
@@ -61,6 +124,17 @@ impl KiraContext {
             manager.play(sound)
         } else {
             Err(PlaySoundError::IntoSoundError(()))
+        }
+    }
+
+    pub fn play_dynamic(
+        &mut self,
+        sound: Box<dyn KiraPlayable>,
+    ) -> Result<KiraPlayingSound, Error> {
+        if let Some(manager) = &mut self.manager {
+            sound.play_in_manager(manager)
+        } else {
+            Err(anyhow!("KiraContext has no manager"))
         }
     }
 
