@@ -14,6 +14,7 @@ use kira::{
         static_sound::{PlaybackState, StaticSoundData, StaticSoundHandle},
         SoundData,
     },
+    track::{TrackBuilder, TrackHandle},
     ClockSpeed,
 };
 pub use static_sound_loader::{KiraStaticSoundAsset, StaticSoundFileLoader};
@@ -136,6 +137,11 @@ impl KiraContext {
     pub fn add_clock(&mut self, clock_speed: ClockSpeed) -> Result<ClockHandle, Error> {
         let manager = self.get_manager()?;
         manager.add_clock(clock_speed).map_err(|e| e.into())
+    }
+
+    pub fn add_track(&mut self, track: TrackBuilder) -> Result<TrackHandle, Error> {
+        let manager = self.get_manager()?;
+        manager.add_sub_track(track).map_err(|e| e.into())
     }
 
     pub fn get_manager(&mut self) -> Result<&mut AudioManager, Error> {

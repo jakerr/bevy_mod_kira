@@ -9,10 +9,9 @@ use bevy_egui::{
     EguiContexts, EguiPlugin,
 };
 use bevy_mod_kira::{
-    KiraAddTrackEvent, KiraPlaySoundEvent, KiraPlugin,
-    KiraStaticSoundAsset, KiraStaticSoundHandle, KiraTracks,
+    KiraContext, KiraPlaySoundEvent, KiraPlugin, KiraStaticSoundAsset, KiraStaticSoundHandle,
 };
-use kira::track::TrackBuilder;
+use kira::track::{TrackBuilder, TrackHandle};
 
 mod effects;
 use effects::{LevelMonitorBuilder, LevelMonitorHandle};
@@ -59,11 +58,10 @@ struct LevelsHandle<const N: usize>(LevelMonitorHandle<N>);
 #[derive(Component)]
 struct Panning(f64);
 
-fn setup_sys(
-    mut commands: Commands,
-    loader: Res<AssetServer>,
-    mut ev_tracks: ResMut<Events<KiraAddTrackEvent>>,
-) {
+#[derive(Component)]
+struct Track(TrackHandle);
+
+fn setup_sys(mut commands: Commands, loader: Res<AssetServer>, mut kira: NonSendMut<KiraContext>) {
     // See the play_sound.rs example for more detailed comments on how to load and play sounds.
     let a = loader.load("hit.ogg");
     let mut entity = commands.spawn(KiraStaticSoundHandle(a));
@@ -78,12 +76,15 @@ fn setup_sys(
     // Hold onto the effect handle so that we can exract the samples from it in another system.
     entity.insert(LevelsHandle(monitor_handle));
     entity.insert(Panning(0.5));
-    ev_tracks.send(KiraAddTrackEvent::new(entity.id(), track));
+    let track_handle = kira
+        .add_track(track)
+        .expect("Failed to add track to KiraContext");
+    entity.insert(Track(track_handle));
 }
 
 fn trigger_play_sys(
     assets: Res<Assets<KiraStaticSoundAsset>>,
-    query: Query<(Entity, &KiraStaticSoundHandle, &KiraTracks, &Panning)>,
+    query: Query<(Entity, &KiraStaticSoundHandle, &Track, &Panning)>,
     time: Res<Time>,
     mut looper: Local<TimerMs<1000>>,
     mut ev_play: EventWriter<KiraPlaySoundEvent>,
@@ -92,12 +93,11 @@ fn trigger_play_sys(
     if !looper.timer.just_finished() {
         return;
     }
-    for (eid, sound_handle, tracks, panning) in query.iter() {
+    for (eid, sound_handle, track, panning) in query.iter() {
         if let Some(sound_asset) = assets.get(&sound_handle.0) {
-            let track = &tracks.0[0];
             let sound_data = sound_asset.sound.clone();
             let sound = sound_data
-                .with_modified_settings(|settings| settings.track(track.id()).panning(panning.0));
+                .with_modified_settings(|settings| settings.track(track.0.id()).panning(panning.0));
             ev_play.send(KiraPlaySoundEvent::new(eid, sound));
         }
     }
