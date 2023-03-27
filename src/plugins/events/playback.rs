@@ -30,14 +30,7 @@ impl KiraPlayingSounds {
     pub fn dynamic_handels<T: 'static>(&self) -> impl Iterator<Item = &T> {
         self.0.iter().filter_map(|sound| match sound {
             KiraPlayingSound::Static(_) => None,
-            KiraPlayingSound::Dynamic(dyn_handle) => {
-                let dyn_any = dyn_handle.as_any();
-                if let Some(m) = dyn_any.downcast_ref::<T>() {
-                    Some(m)
-                } else {
-                    None
-                }
-            }
+            KiraPlayingSound::Dynamic(dyn_handle) => dyn_handle.as_any().downcast_ref::<T>(),
         })
     }
 }
