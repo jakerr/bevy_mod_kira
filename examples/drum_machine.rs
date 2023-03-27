@@ -12,7 +12,10 @@ use egui::{Color32, Id, RichText, Sense};
 use egui_extras::{Size, StripBuilder};
 use kira::{
     clock::ClockHandle,
-    track::{effect::reverb::ReverbHandle, TrackBuilder, TrackHandle},
+    track::{
+        effect::{filter::FilterHandle, reverb::ReverbHandle},
+        TrackBuilder, TrackHandle, TrackId, TrackRoutes,
+    },
     tween::Tween,
 };
 
@@ -28,7 +31,7 @@ const STEP_PER_SEC: f64 = BPS * STEP_PER_BEAT as f64;
 const CHANNEL_ROW_HEIGHT: f32 = 64.0;
 const CHANNEL_UI_SIZES: [f32; 7] = [64.0, 18.0, 18.0, 128.0, 128.0, 128.0, 128.0];
 const MACHINE_H_PADDING: f32 = 32.0;
-const MACHINE_V_PADDING: f32 = 6.0;
+const MACHINE_V_PADDING: f32 = 12.0;
 
 fn steps_per_sec(bpm: f64) -> f64 {
     bpm / 60.0 * STEP_PER_BEAT as f64
@@ -116,6 +119,11 @@ pub fn main() {
 struct TrackReverb(ReverbHandle);
 
 #[derive(Component)]
+// We'll store a float for our filter cutoff setting so it's easy to map to an egui slider and then
+// apply in the apply_levels_sys.
+struct MainFilter(FilterHandle, f64);
+
+#[derive(Component)]
 struct DrumMachine; // Tag component
 
 //
@@ -133,6 +141,19 @@ fn setup_sys(mut commands: Commands, mut kira: NonSendMut<KiraContext>, loader: 
         .expect("Failed to create clock.");
     clock_handle.start().expect("Failed to start clock");
     drum_machine.insert(MainClock(clock_handle));
+
+    // Create a track to hold the filter effect we'll route every channel's individual track through
+    // this one shared filter.
+    let filter = kira::track::effect::filter::FilterBuilder::new().cutoff(440.0);
+    let mut filter_track_builder = TrackBuilder::new();
+    let filter_handle = filter_track_builder.add_effect(filter);
+    let filter_track_handle = kira
+        .add_track(filter_track_builder)
+        .expect("Failed to create filter track.");
+    let filter_track_id = filter_track_handle.id();
+    drum_machine.insert(ChannelTrack(filter_track_handle));
+    drum_machine.insert(MainFilter(filter_handle, 0.5));
+
     add_instrument_channel(
         "kick.ogg",
         "♡",
@@ -141,6 +162,7 @@ fn setup_sys(mut commands: Commands, mut kira: NonSendMut<KiraContext>, loader: 
         &mut drum_machine,
         &loader,
         &mut kira,
+        dbg!(filter_track_id),
     );
     add_instrument_channel(
         "hat.ogg",
@@ -150,6 +172,7 @@ fn setup_sys(mut commands: Commands, mut kira: NonSendMut<KiraContext>, loader: 
         &mut drum_machine,
         &loader,
         &mut kira,
+        filter_track_id,
     );
     add_instrument_channel(
         "snare.ogg",
@@ -159,6 +182,7 @@ fn setup_sys(mut commands: Commands, mut kira: NonSendMut<KiraContext>, loader: 
         &mut drum_machine,
         &loader,
         &mut kira,
+        filter_track_id,
     );
     add_instrument_channel(
         "hit.ogg",
@@ -168,6 +192,7 @@ fn setup_sys(mut commands: Commands, mut kira: NonSendMut<KiraContext>, loader: 
         &mut drum_machine,
         &loader,
         &mut kira,
+        filter_track_id,
     );
 }
 
@@ -228,11 +253,16 @@ fn playback_sys(
 
 fn apply_levels_sys(
     mut channels: Query<(&ChannelInfo, &mut ChannelTrack, &mut TrackReverb), Changed<ChannelInfo>>,
+    mut filter: Query<&mut MainFilter>,
 ) {
     for (info, track, mut reverb) in channels.iter_mut() {
         let volume = if info.muted { 0.0 } else { info.volume };
         let _ = track.0.set_volume(volume, Tween::default());
         let _ = reverb.0.set_mix(info.reverb, Tween::default());
+    }
+    for mut filter in filter.iter_mut() {
+        let value = filter.1;
+        let _ = filter.0.set_mix(value, Tween::default());
     }
 }
 
@@ -243,6 +273,7 @@ fn ui_sys(
     channels: Query<(Entity, &mut ChannelTrack, &mut DrumPattern)>,
     chan_mute: Query<&mut ChannelInfo>,
     mut bpm: Query<&mut Bpm>,
+    mut filter: Query<&mut MainFilter>,
 ) {
     let clock = &clock.single().0;
     egui::CentralPanel::default().show(ctx.ctx_mut(), |mut ui| {
@@ -257,12 +288,13 @@ fn ui_sys(
             .horizontal(|mut strip| {
                 strip.empty();
                 let mut bpm = bpm.single_mut();
+                let mut filter = filter.single_mut();
                 strip.cell(|ui| {
                     let _ = clock.set_speed(
                         kira::ClockSpeed::TicksPerSecond(steps_per_sec(bpm.0)),
                         Tween::default(),
                     );
-                    machine_ui(ui, &mut bpm, channel_ids, channels, chan_mute);
+                    machine_ui(ui, &mut bpm, &mut filter, channel_ids, channels, chan_mute);
                 });
                 strip.empty();
             });
@@ -281,6 +313,7 @@ fn add_instrument_channel(
     parent: &mut EntityCommands,
     loader: &AssetServer,
     kira: &mut KiraContext,
+    filter_track_id: TrackId,
 ) {
     // The parent passed in here is the drum_machine entity from the setup_sys function.
     // We are adding a child entity to the drum_machine entity for each instrument channel.
@@ -306,7 +339,9 @@ fn add_instrument_channel(
             .mix(0.0)
             .stereo_width(0.0);
         let volume = if default_mute { 0.0 } else { 1.0 };
-        let mut track = TrackBuilder::new().volume(volume);
+        let mut track = TrackBuilder::new()
+            .volume(volume)
+            .routes(TrackRoutes::parent(filter_track_id));
 
         // The reverb handle is returned directly from the track builder even before we've sent it
         // to Kira so it's our responsibility to hold onto it in a component if we want to be able
@@ -335,6 +370,7 @@ fn container_size_for_cells(sizes: &[f32], padding: f32) -> f32 {
 fn machine_ui(
     mut ui: &mut egui::Ui,
     bpm: &mut Bpm,
+    filter: &mut MainFilter,
     // Used to draw the channels in the correct order.
     channel_ids: Query<&Children, With<DrumMachine>>,
     mut channels: Query<(Entity, &mut ChannelTrack, &mut DrumPattern)>,
@@ -367,6 +403,11 @@ fn machine_ui(
                             ui.add(
                                 egui::Slider::new(&mut bpm.0, 20.0..=220.0)
                                     .text("BPM")
+                                    .clamp_to_range(true),
+                            );
+                            ui.add(
+                                egui::Slider::new(&mut filter.1, 0.0..=1.0)
+                                    .text("Filter")
                                     .clamp_to_range(true),
                             );
                             ui.add_space(10.0);
