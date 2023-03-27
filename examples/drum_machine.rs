@@ -6,12 +6,13 @@ use bevy_egui::{
     EguiContexts, EguiPlugin,
 };
 use bevy_mod_kira::{
-    KiraAddClockEvent, KiraAddTrackEvent, KiraClocks, KiraPlaySoundEvent,
-    KiraPlugin, KiraStaticSoundAsset, KiraStaticSoundHandle, KiraTracks,
+    KiraAddTrackEvent, KiraContext, KiraPlaySoundEvent, KiraPlugin, KiraStaticSoundAsset,
+    KiraStaticSoundHandle, KiraTracks,
 };
 use egui::{Color32, Id, RichText, Sense};
 use egui_extras::{Size, StripBuilder};
 use kira::{
+    clock::ClockHandle,
     track::{effect::reverb::ReverbHandle, TrackBuilder, TrackHandle},
     tween::Tween,
 };
@@ -61,6 +62,9 @@ struct DrumPattern {
 
 #[derive(Component)]
 struct Bpm(f64);
+
+#[derive(Component)]
+struct MainClock(ClockHandle);
 
 #[derive(Component)]
 struct ChannelInfo {
@@ -118,19 +122,20 @@ struct DrumMachine; // Tag component
 
 fn setup_sys(
     mut commands: Commands,
+    mut kira: NonSendMut<KiraContext>,
     loader: Res<AssetServer>,
     mut ev_tracks: EventWriter<KiraAddTrackEvent>,
-    mut ev_clocks: EventWriter<KiraAddClockEvent>,
 ) {
     // Create a top level entity to hold settings relevant to playback.
     let mut drum_machine = commands.spawn(DrumMachine);
     drum_machine.insert(Bpm(BPM));
     // This tells Kira to add a new clock and associate it with the drum machine entity.
     // Clock handles will be added to the KiraClocks component on that entity.
-    ev_clocks.send(KiraAddClockEvent::new(
-        drum_machine.id(),
-        kira::ClockSpeed::TicksPerSecond(STEP_PER_SEC),
-    ));
+    let clock_handle = kira
+        .add_clock(kira::ClockSpeed::TicksPerSecond(STEP_PER_SEC))
+        .expect("Failed to create clock.");
+    clock_handle.start().expect("Failed to start clock");
+    drum_machine.insert(MainClock(clock_handle));
     add_instrument_channel(
         "kick.ogg",
         "♡",
@@ -175,12 +180,12 @@ struct LastTicks(HashMap<Entity, u64>);
 fn playback_sys(
     assets: Res<Assets<KiraStaticSoundAsset>>,
     channels: Query<(Entity, &KiraStaticSoundHandle, &KiraTracks, &DrumPattern)>,
-    clock: Query<&KiraClocks>,
+    clock: Query<&MainClock>,
     mut ev_play: EventWriter<KiraPlaySoundEvent>,
     mut last_ticks: Local<LastTicks>,
 ) {
     for (chan_id, sound, tracks, pattern) in channels.iter() {
-        let clock = clock.single().0.first().unwrap();
+        let clock = &clock.single().0;
         let clock_ticks = clock.time().ticks;
         let last_tick = last_ticks.0.get(&chan_id).copied().unwrap_or(u64::MAX);
         if clock_ticks == last_tick {
@@ -242,14 +247,13 @@ fn apply_levels_sys(
 
 fn ui_sys(
     mut ctx: EguiContexts,
-    mut clocks: Query<&mut KiraClocks>,
+    clock: Query<&MainClock>,
     channel_ids: Query<&Children, With<DrumMachine>>,
     channels: Query<(Entity, &mut KiraTracks, &mut DrumPattern)>,
     chan_mute: Query<&mut ChannelInfo>,
     mut bpm: Query<&mut Bpm>,
 ) {
-    let mut first_clock = clocks.iter_mut().next();
-    let clock = first_clock.as_mut().map(|c| &mut c.0[0]);
+    let clock = &clock.single().0;
     egui::CentralPanel::default().show(ctx.ctx_mut(), |mut ui| {
         egui::warn_if_debug_build(ui);
         let padding = ui.spacing().item_spacing.x;
@@ -261,16 +265,14 @@ fn ui_sys(
             .size(Size::remainder())
             .horizontal(|mut strip| {
                 strip.empty();
-                if let Some(clock) = clock {
-                    let mut bpm = bpm.single_mut();
-                    strip.cell(|ui| {
-                        let _ = clock.set_speed(
-                            kira::ClockSpeed::TicksPerSecond(steps_per_sec(bpm.0)),
-                            Tween::default(),
-                        );
-                        machine_ui(ui, &mut bpm, channel_ids, channels, chan_mute);
-                    });
-                }
+                let mut bpm = bpm.single_mut();
+                strip.cell(|ui| {
+                    let _ = clock.set_speed(
+                        kira::ClockSpeed::TicksPerSecond(steps_per_sec(bpm.0)),
+                        Tween::default(),
+                    );
+                    machine_ui(ui, &mut bpm, channel_ids, channels, chan_mute);
+                });
                 strip.empty();
             });
     });

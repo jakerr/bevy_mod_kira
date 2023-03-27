@@ -8,13 +8,13 @@ use bevy::{
 };
 
 use kira::{
-    manager::{
-        backend::cpal::CpalBackend, error::PlaySoundError, AudioManager, AudioManagerSettings,
-    },
+    clock::ClockHandle,
+    manager::{backend::cpal::CpalBackend, AudioManager, AudioManagerSettings},
     sound::{
         static_sound::{PlaybackState, StaticSoundData, StaticSoundHandle},
         SoundData,
     },
+    ClockSpeed,
 };
 pub use static_sound_loader::{KiraStaticSoundAsset, StaticSoundFileLoader};
 
@@ -120,33 +120,29 @@ impl Default for KiraContext {
 
 impl KiraContext {
     // Takes the same params as AudioManager::play calls the internal manager and then converts the handle into a bevy component type.
-    pub fn play(
-        &mut self,
-        sound: StaticSoundData,
-    ) -> Result<StaticSoundHandle, PlaySoundError<()>> {
-        if let Some(manager) = &mut self.manager {
-            manager.play(sound)
-        } else {
-            Err(PlaySoundError::IntoSoundError(()))
-        }
+    pub fn play(&mut self, sound: StaticSoundData) -> Result<StaticSoundHandle, Error> {
+        let manager = self.get_manager()?;
+        manager.play(sound).map_err(|e| e.into())
     }
 
     pub fn play_dynamic(
         &mut self,
         sound: Box<dyn KiraPlayable>,
     ) -> Result<KiraPlayingSound, Error> {
-        if let Some(manager) = &mut self.manager {
-            sound.play_in_manager(manager)
-        } else {
-            Err(anyhow!("KiraContext has no manager"))
-        }
+        let manager = self.get_manager()?;
+        sound.play_in_manager(manager)
     }
 
-    pub fn get_manager(&mut self) -> Option<&mut AudioManager> {
+    pub fn add_clock(&mut self, clock_speed: ClockSpeed) -> Result<ClockHandle, Error> {
+        let manager = self.get_manager()?;
+        manager.add_clock(clock_speed).map_err(|e| e.into())
+    }
+
+    pub fn get_manager(&mut self) -> Result<&mut AudioManager, Error> {
         if let Some(manager) = &mut self.manager {
-            return Some(manager);
+            return Ok(manager);
         }
-        None
+        Err(anyhow!("KiraContext has no manager"))
     }
 }
 

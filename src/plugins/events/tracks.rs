@@ -33,7 +33,7 @@ pub(super) fn do_add_track_sys(
     mut ev_add_track: ResMut<Events<KiraAddTrackEvent>>,
 ) {
     for event in ev_add_track.drain() {
-        if let Some(manager) = kira.get_manager() {
+        if let Ok(manager) = kira.get_manager() {
             if let Ok(track_handle) = manager.add_sub_track(event.track) {
                 if let Ok((eid, tracks)) = query.get_mut(event.entity) {
                     match tracks {

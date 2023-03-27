@@ -48,15 +48,15 @@ impl<'a> Debug for DebugKiraManager<'a> {
     }
 }
 
-// Because KiraContext uses a sync cell we have to jump through some hoops to make a debug type that
-// can be printed via the debug trait which takes a non-mutable reference.
+// Jump through some hoops to make a debug type that can be printed via the debug trait which takes
+// a non-mutable reference.
 impl<'a> From<&'a mut KiraContext> for DebugKiraContext<'a> {
     fn from(context: &'a mut KiraContext) -> Self {
-        Self {
-            manager: context
-                .get_manager()
-                .map(|m| DebugKiraManager { manager: m }),
-        }
+        let manager = context
+            .get_manager()
+            .map(|m| Some(DebugKiraManager { manager: m }))
+            .unwrap_or(None);
+        DebugKiraContext { manager }
     }
 }
 
