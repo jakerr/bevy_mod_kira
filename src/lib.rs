@@ -1,4 +1,4 @@
-use std::any::{Any};
+use std::any::Any;
 
 use anyhow::{anyhow, Error};
 use bevy::{
@@ -53,6 +53,10 @@ impl<T: Any + Send + Sync> Downcastable for T {
 }
 
 pub trait DynamicSoundHandle: Downcastable {
+    /// Returns the current playback state of the sound. This is used by bevy_mod_kira to determine
+    /// if the sound is still playing. The only hard requirement is that this method returns
+    /// `PlaybackState::Stopped` if a sound is finished and ready to be cleaned up else a non
+    /// Stopped state should be returned.
     fn state(&self) -> PlaybackState;
 }
 

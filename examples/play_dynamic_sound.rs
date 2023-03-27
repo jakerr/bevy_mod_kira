@@ -1,3 +1,5 @@
+//! This example shows how to create a custom implementation of Kira's SoundData / Sound traits and
+//! use it to play a sound that is dynamically generated at runtime.
 use std::{
     f64::consts::PI,
     sync::{atomic::AtomicBool, Arc},
@@ -6,10 +8,6 @@ use std::{
 
 use bevy::prelude::*;
 use bevy_mod_kira::{DynamicSoundHandle, KiraPlaySoundEvent, KiraPlayingSounds, KiraPlugin};
-use kira::{
-    dsp::Frame,
-    sound::{Sound, SoundData},
-};
 
 pub fn main() {
     App::new()
@@ -34,6 +32,15 @@ impl<const N: i32> Default for TimerMs<N> {
     }
 }
 
+// To make a dynamic sound we need to make something that conforms to the KiraPlayable trait (a
+// trait defined in bevy_mod_kira). KiraPlayable has a blanket implementation for all kira SoundData
+// which have a Handle that implements DynamicSoundHandle.
+//
+// In short We want to implement three types:
+// 1. A type that implements kira::sound::SoundData where the associated handle type is
+//    a bevy_mod_kira::DynamicSoundHandle.
+// 2. The handle type that implements bevy_mod_kira::DynamicSoundHandle.
+// 3. The sound type that implements kira::sound::Sound.
 #[derive(Component, Clone)]
 pub struct MySoundData;
 struct MySound {
@@ -47,7 +54,11 @@ pub struct MySoundHandle {
     stopped: Arc<AtomicBool>,
 }
 
+/// Implementing DynamicSoundHandle is required by `bevy_mod_kira` to make this sound conform to the
+/// `KiraPlayable` trait.
 impl DynamicSoundHandle for MySoundHandle {
+    // We need to implement this method so that we can tell kira when the sound has finished
+    // playing.
     fn state(&self) -> kira::sound::static_sound::PlaybackState {
         self.stopped
             .load(std::sync::atomic::Ordering::Relaxed)
@@ -56,11 +67,14 @@ impl DynamicSoundHandle for MySoundHandle {
     }
 }
 
-impl Sound for MySound {
+impl kira::sound::Sound for MySound {
     fn track(&mut self) -> kira::track::TrackId {
         kira::track::TrackId::Main
     }
 
+    /// We here create a kira::dsp::Frame containing the left and right samples for the sound. We're
+    /// going to create a sine wave with a frequency based on `self.tone`. We scale it so that the
+    /// sine wave fades in and then out over the duration of the sound.
     fn process(
         &mut self,
         dt: f64,
@@ -70,12 +84,14 @@ impl Sound for MySound {
         let tone = (self.phase * self.tone * 2.0 * PI).sin() as f32;
         let progress = self.phase / self.len;
         let max = 0.5;
+        // (progress * PI).sin() gives us half of a sine wave in the positive domain. A smooth 0.0
+        // to 1.0 and back to 0.0 over the duration of the sound.
         let scaled = max * tone * (progress * PI).sin() as f32;
         if self.phase > self.len {
             self.stopped
                 .store(true, std::sync::atomic::Ordering::Relaxed);
         }
-        Frame {
+        kira::dsp::Frame {
             left: scaled,
             right: scaled,
         }
@@ -86,7 +102,11 @@ impl Sound for MySound {
     }
 }
 
-impl SoundData for MySoundData {
+/// Implementing kira::sound::SoundData is required by `kira` this type is a kind of constructor
+/// that we use each time we want to start a new instance of the dynamic sound.
+/// The into_sound method must generate a new instance of a kira::sound::Sound and return it along
+/// with a Handle to control / monitor the playing sound.
+impl kira::sound::SoundData for MySoundData {
     type Handle = MySoundHandle;
     type Error = ();
 
