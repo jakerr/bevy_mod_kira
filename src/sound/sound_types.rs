@@ -6,6 +6,17 @@ use kira::sound::static_sound::StaticSoundHandle;
 use kira::sound::SoundData;
 use std::any::Any;
 
+/// KiraPlayable is a trait that allows KiraPlugin to play static (sounds loaded from a supported
+/// sound file) and dynamic sounds implementations of `kira::sound::Sound`.
+///
+/// Static sounds loaded by the asset loader implement this type automatically through a blanket
+/// implementation.
+///
+/// In order to make a custom dynamic sound that is also KiraPlayable three type implementations are required:
+///  1. A type that implements kira::sound::SoundData where the associated handle type is
+///     a [`DynamicSoundHandle`].
+///  2. The handle type that implements [`DynamicSoundHandle`].
+///  3. The sound type that implements `kira::sound::Sound`.
 pub trait KiraPlayable: Send + Sync + 'static {
     fn play_in_manager(
         &self,
@@ -23,6 +34,7 @@ impl<T: Any + Send + Sync> Downcastable for T {
     }
 }
 
+/// A trait that allows communication with a dynamic sound that is currently playing.
 pub trait DynamicSoundHandle: Downcastable {
     /// Returns the current playback state of the sound. This is used by bevy_mod_kira to determine
     /// if the sound is still playing. The only hard requirement is that this method returns
@@ -60,7 +72,6 @@ where
         &self,
         manager: &mut AudioManager<CpalBackend>,
     ) -> Result<KiraPlayingSound, Error> {
-        // Result<DynHandle, Error> {
         let res = manager.play::<D>(self.clone());
         res.map_err(|_e| anyhow!("failed to play sound: {}", std::any::type_name::<D>()))
             .map(|handle| handle.into())

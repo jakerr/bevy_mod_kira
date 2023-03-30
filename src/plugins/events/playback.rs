@@ -14,22 +14,33 @@ pub use crate::sound::{
     sound_types::KiraPlayingSound,
     static_sounds::{KiraStaticSoundAsset, StaticSoundFileLoader},
 };
+use crate::DynamicSoundHandle;
 use crate::KiraPlayable;
 use kira::sound::static_sound::StaticSoundHandle;
 
 use crate::KiraContext;
 
 #[derive(Component, Default, Reflect)]
+/// This Component represents a collection of all currently playing sounds for an entity.
+/// The sounds can be iterated over using the `static_handles` and `dynamic_handles` methods.
 pub struct KiraPlayingSounds(#[reflect(ignore)] pub(crate) Vec<KiraPlayingSound>);
 
 impl KiraPlayingSounds {
+    /// Returns an iterator over all currently playing static sounds' [`StaticSoundHandle`]s.
+    ///
+    /// [`StaticSoundHandle`]: https://docs.rs/kira/latest/kira/sound/static_sound/struct.StaticSoundHandle.html
     pub fn static_handles(&self) -> impl Iterator<Item = &StaticSoundHandle> {
         self.0.iter().filter_map(|sound| match sound {
             KiraPlayingSound::Static(sound) => Some(sound),
             KiraPlayingSound::Dynamic(_) => None,
         })
     }
-    pub fn dynamic_handels<T: 'static>(&self) -> impl Iterator<Item = &T> {
+    /// Returns an iterator over all currently playing dynamic sound [`DynamicSoundHandle`] handles
+    /// for the specified concrete type `T`.
+    pub fn dynamic_handles<T: 'static>(&self) -> impl Iterator<Item = &T>
+    where
+        T: DynamicSoundHandle,
+    {
         self.0.iter().filter_map(|sound| match sound {
             KiraPlayingSound::Static(_) => None,
             KiraPlayingSound::Dynamic(dyn_handle) => dyn_handle.as_any().downcast_ref::<T>(),
@@ -37,8 +48,19 @@ impl KiraPlayingSounds {
     }
 }
 
+/// This event is used to tell [`KiraPlugin`] to play a sound. Once `KiraPlugin` has consumed the
+/// event it will request that kira begins playing it. The sound handle for the playing event will
+/// be converted into a [`KiraPlayingSound`] and inserted into a [`KiraPlayingSounds`] (notice the
+//plural 's' there) component on the entity / specified in the event. This allows the sound to be
+//stopped or modified later by querying for
+/// `KiraPlayingSounds` in a system.
+///
+/// [`KiraPlugin`]: crate::KiraPlugin
 pub struct KiraPlaySoundEvent {
+    /// The entity that the playing sound should be associated with via the `KiraPlayingSounds`
+    /// component.
     pub(super) entity: Entity,
+    /// The sound to play.
     pub(super) sound: Box<dyn KiraPlayable>,
 }
 

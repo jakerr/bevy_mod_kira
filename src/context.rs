@@ -2,7 +2,6 @@ use anyhow::{anyhow, Error};
 use bevy::prelude::error;
 
 use crate::sound::sound_types::{KiraPlayable, KiraPlayingSound};
-pub use crate::sound::static_sounds::{KiraStaticSoundAsset, StaticSoundFileLoader};
 use kira::{
     clock::ClockHandle,
     manager::{backend::cpal::CpalBackend, AudioManager, AudioManagerSettings},
@@ -11,9 +10,21 @@ use kira::{
     ClockSpeed,
 };
 
-// This is a non-send resource. If we were only targeting desktop we could use a normal resource
-// wrapping a SyncCell since the AudioManager is sync on desktop but that's not true for every
-// platform that we want to support i.e. Android and wasm.
+/// KiraContext is a non-send resource that provides access to an initialized `kira::AudioManager`.
+/// Storing this in a non-send resource is necessary in order to support environments such as web
+/// (WebAssembly) and Android where kira's AudioManager is non-sync. For simplicity's sake the
+/// context is stored in a non-send resource everywhere.
+///
+/// In practice this means that systems that use the context will need to take
+/// a `NonSendMut<KiraContext>` as a parameter which will instruct Bevy to run the system on the
+/// main thread. For this reason it is recommended to only interface directly through the context
+/// for setup systems for example to create tracks and clocks. (See the drum_machine example.)
+///
+/// For systems that want to trigger sound playback they should send a [`KiraPlaySoundEvent`] via a
+/// `EventWriter<PlaySoundEvent>` which is a thread-safe event channel so does not impact
+/// the parallelizability of the system.
+///
+/// [`KiraPlaySoundEvent`]: crate::plugins::events::KiraPlaySoundEvent
 pub struct KiraContext {
     manager: Option<AudioManager>,
 }
@@ -31,7 +42,6 @@ impl Default for KiraContext {
 }
 
 impl KiraContext {
-    // Takes the same params as AudioManager::play calls the internal manager and then converts the handle into a bevy component type.
     pub fn play(&mut self, sound: StaticSoundData) -> Result<StaticSoundHandle, Error> {
         let manager = self.get_manager()?;
         manager.play(sound).map_err(|e| e.into())

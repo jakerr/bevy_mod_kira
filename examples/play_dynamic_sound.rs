@@ -149,7 +149,7 @@ fn trigger_play_sys(
 fn handles_sys(sounds: Query<&KiraPlayingSounds>) {
     for active_sounds in sounds.iter() {
         let mut count = 0usize;
-        for handle in active_sounds.dynamic_handels::<MySoundHandle>() {
+        for handle in active_sounds.dynamic_handles::<MySoundHandle>() {
             count += 1;
             info!("MySound..., {:?}, {}", handle, count);
         }
