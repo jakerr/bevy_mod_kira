@@ -62,7 +62,7 @@ impl DynamicSoundHandle for MySoundHandle {
     fn state(&self) -> kira::sound::static_sound::PlaybackState {
         self.stopped
             .load(std::sync::atomic::Ordering::Relaxed)
-            .then(|| kira::sound::static_sound::PlaybackState::Stopped)
+            .then_some(kira::sound::static_sound::PlaybackState::Stopped)
             .unwrap_or(kira::sound::static_sound::PlaybackState::Playing)
     }
 }

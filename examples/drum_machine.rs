@@ -276,10 +276,10 @@ fn ui_sys(
     mut filter: Query<&mut MainFilter>,
 ) {
     let clock = &clock.single().0;
-    egui::CentralPanel::default().show(ctx.ctx_mut(), |mut ui| {
+    egui::CentralPanel::default().show(ctx.ctx_mut(), |ui| {
         egui::warn_if_debug_build(ui);
         let padding = ui.spacing().item_spacing.x;
-        StripBuilder::new(&mut ui)
+        StripBuilder::new(ui)
             .size(Size::remainder())
             .size(Size::exact(
                 container_size_for_cells(&CHANNEL_UI_SIZES, padding) + MACHINE_H_PADDING * 2.0,
@@ -368,7 +368,7 @@ fn container_size_for_cells(sizes: &[f32], padding: f32) -> f32 {
 //
 
 fn machine_ui(
-    mut ui: &mut egui::Ui,
+    ui: &mut egui::Ui,
     bpm: &mut Bpm,
     filter: &mut MainFilter,
     // Used to draw the channels in the correct order.
@@ -380,7 +380,7 @@ fn machine_ui(
     let padding_y = ui.spacing().item_spacing.y;
     let total_height = (CHANNEL_ROW_HEIGHT + padding_y) * 5.0 + MACHINE_V_PADDING * 2.0;
     let bg_color: Color32 = dark_color(Pallete::DeepBlue);
-    StripBuilder::new(&mut ui)
+    StripBuilder::new(ui)
         .size(Size::remainder())
         .size(Size::exact(total_height))
         .size(Size::remainder())
@@ -455,22 +455,22 @@ fn channel_view(
                 builder.horizontal(|mut strip| {
                     let base_color: Rgba =
                         shift_color(Pallete::FreshGreen, (channel_number + 1) as f32 * 30.0).into();
-                    strip.cell(|mut ui| {
-                        channel_title_view(&mut ui, base_color, track, info);
+                    strip.cell(|ui| {
+                        channel_title_view(ui, base_color, track, info);
                     });
                     let is_muted = info.muted;
-                    strip.cell(|mut ui| {
+                    strip.cell(|ui| {
                         track_fader_view(
-                            &mut ui,
+                            ui,
                             Pallete::LeafGreen,
                             &mut info.volume,
                             0.0..=1.0,
                             is_muted,
                         );
                     });
-                    strip.cell(|mut ui| {
+                    strip.cell(|ui| {
                         track_fader_view(
-                            &mut ui,
+                            ui,
                             Pallete::DeepBlue,
                             &mut info.reverb,
                             0.0..=0.5,
@@ -479,7 +479,7 @@ fn channel_view(
                     });
                     let steps = &mut drum_pattern.steps[..];
                     for beat in 0..4 {
-                        strip.cell(|mut ui| {
+                        strip.cell(|ui| {
                             let mut beat_color = base_color;
                             if beat % 2 == 1 {
                                 beat_color =
@@ -488,7 +488,7 @@ fn channel_view(
                             };
                             let this_beat = &mut steps[beat * 4..(beat + 1) * 4];
                             beat_view(
-                                &mut ui,
+                                ui,
                                 channel_number,
                                 if info.muted {
                                     muted_color(beat_color)
@@ -509,10 +509,10 @@ fn channel_view(
 fn control_legend_view(ui: &mut egui::Ui) {
     let padding_x = ui.spacing().item_spacing.x;
     let sizes = [
-        *&CHANNEL_UI_SIZES[0],
-        *&CHANNEL_UI_SIZES[1],
-        *&CHANNEL_UI_SIZES[2],
-        (*&CHANNEL_UI_SIZES[3] + padding_x) * 4.0,
+        CHANNEL_UI_SIZES[0],
+        CHANNEL_UI_SIZES[1],
+        CHANNEL_UI_SIZES[2],
+        (CHANNEL_UI_SIZES[3] + padding_x) * 4.0,
     ];
     StripBuilder::new(ui)
         .size(Size::exact(32.0))
@@ -589,7 +589,7 @@ fn track_fader_view(
     spacing.slider_width = height - 6.0;
     let style = ui.style_mut();
 
-    let mut color = color.into().clone();
+    let mut color = color.into();
     let full_color: Rgba = color;
     let mute_color: Rgba = muted_color(color).into();
     if is_muted {
@@ -597,7 +597,7 @@ fn track_fader_view(
     } else {
         let v = *value as f32;
         let color_sat: f32 = v / (*range.end() as f32 - *range.start() as f32);
-        color = egui::lerp(mute_color..=full_color, color_sat).into();
+        color = egui::lerp(mute_color..=full_color, color_sat);
     }
 
     let color = color.into();

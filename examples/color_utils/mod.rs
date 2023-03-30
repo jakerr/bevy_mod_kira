@@ -30,31 +30,31 @@ impl From<Pallete> for Color32 {
 
 pub fn shift_color(color: impl Into<Rgba>, degrees: f32) -> Color32 {
     let mut color = Hsva::from(color.into());
-    color.h = color.h + (degrees / 360.0);
+    color.h += degrees / 360.0;
     if color.h > 1.0 {
-        color.h = color.h - 1.0;
+        color.h -= 1.0;
     }
     color.into()
 }
 
 pub fn light_color(color: impl Into<Rgba>) -> Color32 {
     let mut color = Hsva::from(color.into());
-    color.s = color.s * 0.8;
-    color.v = color.v * 0.70;
+    color.s *= 0.8;
+    color.v *= 0.70;
     color.into()
 }
 
 pub fn muted_color(color: impl Into<Rgba>) -> Color32 {
     let mut color = Hsva::from(color.into());
-    color.s = color.s * 0.35;
-    color.v = color.v * 0.30;
+    color.s *= 0.35;
+    color.v *= 0.30;
     color.into()
 }
 
 pub fn dark_color(color: impl Into<Rgba>) -> Color32 {
     let mut color = Hsva::from(color.into());
-    color.s = color.s * 0.35;
-    color.v = color.v * 0.10;
+    color.s *= 0.35;
+    color.v *= 0.10;
     color.into()
 }
 
