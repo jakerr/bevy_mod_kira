@@ -6,7 +6,7 @@ use bevy::{
 };
 use kira::manager::AudioManager;
 
-use crate::{KiraContext, TimerMs};
+use crate::{util::TimerMs, KiraContext};
 
 use super::KiraPlayingSounds;
 

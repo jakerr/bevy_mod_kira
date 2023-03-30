@@ -2,7 +2,7 @@ use bevy::prelude::Events;
 
 use bevy::app::Plugin;
 
-pub use crate::static_sound_loader::{KiraStaticSoundAsset, StaticSoundFileLoader};
+pub use crate::sound::static_sounds::{KiraStaticSoundAsset, StaticSoundFileLoader};
 
 mod playback;
 pub use playback::*;

@@ -10,9 +10,11 @@ use bevy::prelude::{Commands, Component, Entity, Query};
 use bevy::reflect::Reflect;
 use kira::sound::static_sound::PlaybackState;
 
-pub use crate::static_sound_loader::{KiraStaticSoundAsset, StaticSoundFileLoader};
+pub use crate::sound::{
+    sound_types::KiraPlayingSound,
+    static_sounds::{KiraStaticSoundAsset, StaticSoundFileLoader},
+};
 use crate::KiraPlayable;
-use crate::KiraPlayingSound;
 use kira::sound::static_sound::StaticSoundHandle;
 
 use crate::KiraContext;

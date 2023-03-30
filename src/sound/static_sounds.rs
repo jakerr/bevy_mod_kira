@@ -1,6 +1,6 @@
 use anyhow::Result;
 use bevy::asset::{AssetLoader, LoadContext, LoadedAsset};
-use bevy::prelude::debug;
+use bevy::prelude::{debug, Component, Handle};
 use bevy::reflect::impl_type_uuid;
 use bevy::utils::BoxedFuture;
 use kira::sound::static_sound::{StaticSoundData, StaticSoundSettings};
@@ -19,6 +19,9 @@ pub type KiraStaticSoundAsset = SoundAsset<StaticSoundData>;
 impl_type_uuid!(KiraStaticSoundAsset, "4e6dfb5e-8196-4974-8790-5bae8c01ac2d");
 
 pub struct StaticSoundFileLoader;
+
+#[derive(Component)]
+pub struct KiraStaticSoundHandle(pub Handle<KiraStaticSoundAsset>);
 
 // This method for loading the sound was adapted from the bevy_kira_audio crate:
 // See: https://github.com/NiklasEi/bevy_kira_audio/blob/main/src/source/ogg_loader.rs
