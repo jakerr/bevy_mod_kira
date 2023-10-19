@@ -13,7 +13,7 @@ impl Plugin for KiraPlugin {
         app.init_non_send_resource::<KiraContext>()
             .add_asset::<KiraStaticSoundAsset>()
             .add_asset_loader(StaticSoundFileLoader)
-            .add_plugin(KiraEventsPlugin);
+            .add_plugins(KiraEventsPlugin);
         // .add_plugin(plugins::KiraDebugPlugin);
     }
 }

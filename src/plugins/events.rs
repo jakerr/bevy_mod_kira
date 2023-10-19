@@ -1,4 +1,4 @@
-use bevy::prelude::Events;
+use bevy::prelude::{Events, Update};
 
 use bevy::app::Plugin;
 
@@ -14,8 +14,7 @@ impl Plugin for KiraEventsPlugin {
         // The following events will not have automatic cleanup we need to manually consume them
         // to take the internal data out of the events.
         app.init_resource::<Events<KiraPlaySoundEvent>>()
-            .add_system(do_play_sys)
-            .add_system(cleanup_inactive_sounds_sys)
+            .add_systems(Update, (do_play_sys, cleanup_inactive_sounds_sys))
             .register_type::<KiraPlayingSounds>();
     }
 }

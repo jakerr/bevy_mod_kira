@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Error};
 use kira::manager::backend::cpal::CpalBackend;
 use kira::manager::AudioManager;
-use kira::sound::static_sound::PlaybackState;
 use kira::sound::static_sound::StaticSoundHandle;
+use kira::sound::PlaybackState;
 use kira::sound::SoundData;
 use std::any::Any;
 

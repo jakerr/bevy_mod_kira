@@ -3,11 +3,10 @@ use bevy::prelude::error;
 
 use crate::sound::sound_types::{KiraPlayable, KiraPlayingSound};
 use kira::{
-    clock::ClockHandle,
+    clock::{ClockHandle, ClockSpeed},
     manager::{backend::cpal::CpalBackend, AudioManager, AudioManagerSettings},
     sound::static_sound::{StaticSoundData, StaticSoundHandle},
     track::{TrackBuilder, TrackHandle},
-    ClockSpeed,
 };
 
 /// KiraContext is a non-send resource that provides access to an initialized `kira::AudioManager`.

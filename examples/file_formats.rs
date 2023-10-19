@@ -3,9 +3,7 @@ use bevy_egui::{
     egui::{self, Color32, RichText},
     EguiContexts, EguiPlugin,
 };
-use bevy_mod_kira::{
-    KiraPlaySoundEvent, KiraPlugin, KiraStaticSoundAsset, KiraStaticSoundHandle,
-};
+use bevy_mod_kira::{KiraPlaySoundEvent, KiraPlugin, KiraStaticSoundAsset, KiraStaticSoundHandle};
 
 mod color_utils;
 use color_utils::*;
@@ -22,10 +20,9 @@ pub fn main() {
             }),
             ..default()
         }))
-        .add_plugin(KiraPlugin)
-        .add_plugin(EguiPlugin)
-        .add_startup_system(setup_sys)
-        .add_system(ui_sys)
+        .add_plugins((KiraPlugin, EguiPlugin))
+        .add_systems(Startup, setup_sys)
+        .add_systems(Update, ui_sys)
         .run();
 }
 
