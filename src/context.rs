@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Error};
-use bevy::prelude::error;
+use bevy::prelude::*;
 
 use crate::sound::sound_types::{KiraPlayable, KiraPlayingSound};
 use kira::{

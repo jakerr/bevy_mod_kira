@@ -12,11 +12,12 @@ rust-version = "1.67.0"
 
 [dependencies]
 anyhow = "1.0.69"
-bevy = "~0.11.0"
+bevy = "0.12.0"
 kira = "0.8.5"
+thiserror = "1.0.50"
 
 [dev-dependencies]
-bevy_egui = "0.22.0"
+bevy_egui = "0.23.0"
 egui_extras = "0.23.0"
 egui_plot = "0.23.0"
 ringbuf = "0.3.2"

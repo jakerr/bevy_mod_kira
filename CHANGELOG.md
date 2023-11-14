@@ -1,10 +1,10 @@
 # 0.2.0
 
-- Upgrade to bevy 0.11
+- Upgrade to bevy 0.12
 - Upgrade to kira 0.8
 - Upgrade to egui 0.23
 
-- In order to upgrade to Bevy 0.11 StaticSoundData from the Kira library needed to be wrapped in
+- In order to upgrade to Bevy 0.12 StaticSoundData from the Kira library needed to be wrapped in
   a new type `KiraStaticSoundData` so it could implement `TypePath` (required to be used as an
   asset) so places that use this type will need to access the inner anonymous field.
 

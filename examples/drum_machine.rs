@@ -305,7 +305,7 @@ fn ui_sys(
 //
 
 fn add_instrument_channel(
-    asset: &str,
+    asset: &'static str,
     icon: &str,
     default_pattern: impl Into<DrumPattern>,
     default_mute: bool,
