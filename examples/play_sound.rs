@@ -7,11 +7,9 @@ use bevy_mod_kira::{
 
 pub fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugin(KiraPlugin)
-        .add_startup_system(setup_sys)
-        .add_system(trigger_play_sys)
-        .add_system(handles_sys)
+        .add_plugins((DefaultPlugins, KiraPlugin))
+        .add_systems(Startup, setup_sys)
+        .add_systems(Update, (trigger_play_sys, handles_sys))
         .run();
 }
 

@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Formatter};
 
 use bevy::{
-    prelude::{debug, Entity, Local, NonSendMut, Plugin, Query, Res},
+    prelude::{debug, Entity, Local, NonSendMut, Plugin, Query, Res, Update},
     time::Time,
 };
 use kira::manager::AudioManager;
@@ -14,7 +14,7 @@ pub struct KiraDebugPlugin;
 
 impl Plugin for KiraDebugPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
-        app.add_system(debug_kira_sys);
+        app.add_systems(Update, debug_kira_sys);
     }
 }
 

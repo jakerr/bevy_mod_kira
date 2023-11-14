@@ -8,14 +8,16 @@ use std::{
 
 use bevy::prelude::*;
 use bevy_mod_kira::{DynamicSoundHandle, KiraPlaySoundEvent, KiraPlayingSounds, KiraPlugin};
+use kira::{
+    clock::clock_info::ClockInfoProvider, modulator::value_provider::ModulatorValueProvider,
+    OutputDestination,
+};
 
 pub fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugin(KiraPlugin)
-        .add_startup_system(setup_sys)
-        .add_system(trigger_play_sys)
-        .add_system(handles_sys)
+        .add_plugins((DefaultPlugins, KiraPlugin))
+        .add_systems(Startup, setup_sys)
+        .add_systems(Update, (trigger_play_sys, handles_sys))
         .run();
 }
 
@@ -59,17 +61,17 @@ pub struct MySoundHandle {
 impl DynamicSoundHandle for MySoundHandle {
     // We need to implement this method so that we can tell kira when the sound has finished
     // playing.
-    fn state(&self) -> kira::sound::static_sound::PlaybackState {
+    fn state(&self) -> kira::sound::PlaybackState {
         self.stopped
             .load(std::sync::atomic::Ordering::Relaxed)
-            .then_some(kira::sound::static_sound::PlaybackState::Stopped)
-            .unwrap_or(kira::sound::static_sound::PlaybackState::Playing)
+            .then_some(kira::sound::PlaybackState::Stopped)
+            .unwrap_or(kira::sound::PlaybackState::Playing)
     }
 }
 
 impl kira::sound::Sound for MySound {
-    fn track(&mut self) -> kira::track::TrackId {
-        kira::track::TrackId::Main
+    fn output_destination(&mut self) -> OutputDestination {
+        OutputDestination::MAIN_TRACK
     }
 
     /// We here create a kira::dsp::Frame containing the left and right samples for the sound. We're
@@ -78,7 +80,8 @@ impl kira::sound::Sound for MySound {
     fn process(
         &mut self,
         dt: f64,
-        _clock_info_provider: &kira::clock::clock_info::ClockInfoProvider,
+        _clock_info_provider: &ClockInfoProvider,
+        _modulator_value_provider: &ModulatorValueProvider,
     ) -> kira::dsp::Frame {
         self.phase += dt;
         let tone = (self.phase * self.tone * 2.0 * PI).sin() as f32;

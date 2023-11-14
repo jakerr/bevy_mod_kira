@@ -1,14 +1,8 @@
 use std::fmt::Debug;
 use std::fmt::Formatter;
 
-use bevy::prelude::error;
-
-use bevy::prelude::Events;
-use bevy::prelude::NonSendMut;
-use bevy::prelude::ResMut;
-use bevy::prelude::{Commands, Component, Entity, Query};
-use bevy::reflect::Reflect;
-use kira::sound::static_sound::PlaybackState;
+use bevy::prelude::*;
+use kira::sound::PlaybackState;
 
 pub use crate::sound::{
     sound_types::KiraPlayingSound,
@@ -56,6 +50,7 @@ impl KiraPlayingSounds {
 /// `KiraPlayingSounds` in a system.
 ///
 /// [`KiraPlugin`]: crate::KiraPlugin
+#[derive(Event)]
 pub struct KiraPlaySoundEvent {
     /// The entity that the playing sound should be associated with via the `KiraPlayingSounds`
     /// component.

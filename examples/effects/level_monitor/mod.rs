@@ -1,9 +1,12 @@
 use std::collections::VecDeque;
 
-use bevy::prelude::warn;
+use bevy::prelude::*;
 use ringbuf::HeapProducer;
 
-use kira::{clock::clock_info::ClockInfoProvider, dsp::Frame, track::effect::Effect};
+use kira::{
+    clock::clock_info::ClockInfoProvider, dsp::Frame,
+    modulator::value_provider::ModulatorValueProvider, track::effect::Effect,
+};
 
 mod builder;
 mod handle;
@@ -58,6 +61,7 @@ impl<const N: usize> Effect for LevelMonitor<N> {
         input: Frame,
         _dt: f64,
         _clock_info_provider: &ClockInfoProvider,
+        _modulator_value_provider: &ModulatorValueProvider,
     ) -> Frame {
         self.raw.push_back(input);
         if self.raw.len() > N {

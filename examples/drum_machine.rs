@@ -106,12 +106,9 @@ pub fn main() {
             }),
             ..default()
         }))
-        .add_plugin(KiraPlugin)
-        .add_plugin(EguiPlugin)
-        .add_startup_system(setup_sys)
-        .add_system(playback_sys)
-        .add_system(apply_levels_sys)
-        .add_system(ui_sys)
+        .add_plugins((KiraPlugin, EguiPlugin))
+        .add_systems(Startup, setup_sys)
+        .add_systems(Update, (playback_sys, apply_levels_sys, ui_sys))
         .run();
 }
 
@@ -137,7 +134,7 @@ fn setup_sys(mut commands: Commands, mut kira: NonSendMut<KiraContext>, loader: 
     // This tells Kira to add a new clock and associate it with the drum machine entity.
     // Clock handles will be added to the KiraClocks component on that entity.
     let clock_handle = kira
-        .add_clock(kira::ClockSpeed::TicksPerSecond(STEP_PER_SEC))
+        .add_clock(kira::clock::ClockSpeed::TicksPerSecond(STEP_PER_SEC))
         .expect("Failed to create clock.");
     clock_handle.start().expect("Failed to start clock");
     drum_machine.insert(MainClock(clock_handle));
@@ -227,11 +224,13 @@ fn playback_sys(
         let next_play_step = clock_ticks as usize % STEPS;
         if pattern.steps[next_play_step] {
             if let Some(sound_asset) = assets.get(&sound.0) {
-                let sound = sound_asset.sound.with_modified_settings(|mut settings| {
+                let sound = sound_asset.sound.0.with_modified_settings(|mut settings| {
                     // We calculate next_play_step as the the step at current clock time, but we
                     // want to start the sound right at precise tick so every sound will be
                     // triggered at a 1 tick offset.
-                    settings = settings.track(&track.0).start_time(clock.time() + 1);
+                    settings = settings
+                        .output_destination(&track.0)
+                        .start_time(clock.time() + 1);
                     settings
                 });
 
@@ -291,7 +290,7 @@ fn ui_sys(
                 let mut filter = filter.single_mut();
                 strip.cell(|ui| {
                     let _ = clock.set_speed(
-                        kira::ClockSpeed::TicksPerSecond(steps_per_sec(bpm.0)),
+                        kira::clock::ClockSpeed::TicksPerSecond(steps_per_sec(bpm.0)),
                         Tween::default(),
                     );
                     machine_ui(ui, &mut bpm, &mut filter, channel_ids, channels, chan_mute);
@@ -306,7 +305,7 @@ fn ui_sys(
 //
 
 fn add_instrument_channel(
-    asset: &str,
+    asset: &'static str,
     icon: &str,
     default_pattern: impl Into<DrumPattern>,
     default_mute: bool,
@@ -464,7 +463,7 @@ fn channel_view(
                             ui,
                             Pallete::LeafGreen,
                             &mut info.volume,
-                            0.0..=1.0,
+                            1.0..=0.0,
                             is_muted,
                         );
                     });
@@ -473,7 +472,7 @@ fn channel_view(
                             ui,
                             Pallete::DeepBlue,
                             &mut info.reverb,
-                            0.0..=0.5,
+                            0.5..=0.0,
                             is_muted,
                         );
                     });
@@ -596,7 +595,11 @@ fn track_fader_view(
         color = mute_color;
     } else {
         let v = *value as f32;
-        let color_sat: f32 = v / (*range.end() as f32 - *range.start() as f32);
+        let start = *range.start() as f32;
+        let end = *range.end() as f32;
+        let a = start.min(end);
+        let b = start.max(end);
+        let color_sat = v / (b - a);
         color = egui::lerp(mute_color..=full_color, color_sat);
     }
 

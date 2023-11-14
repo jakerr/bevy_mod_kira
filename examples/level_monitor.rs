@@ -2,15 +2,13 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_egui::{
-    egui::{
-        self,
-        plot::{BarChart, HLine, LineStyle},
-    },
+    egui::{self},
     EguiContexts, EguiPlugin,
 };
 use bevy_mod_kira::{
     KiraContext, KiraPlaySoundEvent, KiraPlugin, KiraStaticSoundAsset, KiraStaticSoundHandle,
 };
+use egui_plot::{BarChart, HLine, LineStyle};
 use kira::track::{TrackBuilder, TrackHandle};
 
 mod effects;
@@ -31,11 +29,9 @@ pub fn main() {
             }),
             ..default()
         }))
-        .add_plugin(KiraPlugin)
-        .add_plugin(EguiPlugin)
-        .add_startup_system(setup_sys)
-        .add_system(trigger_play_sys)
-        .add_system(ui_sys)
+        .add_plugins((KiraPlugin, EguiPlugin))
+        .add_systems(Startup, setup_sys)
+        .add_systems(Update, (trigger_play_sys, ui_sys))
         .run();
 }
 
@@ -96,8 +92,9 @@ fn trigger_play_sys(
     for (eid, sound_handle, track, panning) in query.iter() {
         if let Some(sound_asset) = assets.get(&sound_handle.0) {
             let sound_data = sound_asset.sound.clone();
-            let sound = sound_data
-                .with_modified_settings(|settings| settings.track(track.0.id()).panning(panning.0));
+            let sound = sound_data.0.with_modified_settings(|settings| {
+                settings.output_destination(track.0.id()).panning(panning.0)
+            });
             ev_play.send(KiraPlaySoundEvent::new(eid, sound));
         }
     }
@@ -158,10 +155,10 @@ fn ui_sys(
                 ui.add(egui::Slider::new(&mut panning.0, 0.0..=1.0).text("Panning"));
             });
             // Plot two bars one for left and one for right. Make the heights relative to the left and right levels.
-            let left_bar = egui::plot::Bar::new(-0.5, peaks.left as f64);
-            let right_bar = egui::plot::Bar::new(0.5, peaks.right as f64);
-            let plot = egui::plot::Plot::new("Levels")
-                .legend(egui::plot::Legend::default())
+            let left_bar = egui_plot::Bar::new(-0.5, peaks.left as f64);
+            let right_bar = egui_plot::Bar::new(0.5, peaks.right as f64);
+            let plot = egui_plot::Plot::new("Levels")
+                .legend(egui_plot::Legend::default())
                 .label_formatter(|_name, value| format!("{:.2} db", value.y - 100.0))
                 .show_background(false)
                 .include_x(-1.0)
