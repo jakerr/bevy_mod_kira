@@ -36,7 +36,7 @@ pub fn main() {
             },
         ))
         .add_systems(Startup, setup_sys)
-        .add_systems(Update, (trigger_play_sys))
+        .add_systems(Update, trigger_play_sys)
         .add_systems(EguiContextPass, ui_sys)
         .run();
 }
@@ -101,7 +101,7 @@ fn trigger_play_sys(
             let sound = sound_data.0.with_modified_settings(|settings| {
                 settings.output_destination(track.0.id()).panning(panning.0)
             });
-            ev_play.send(KiraPlaySoundEvent::new(eid, sound));
+            ev_play.write(KiraPlaySoundEvent::new(eid, sound));
         }
     }
 }

@@ -245,12 +245,12 @@ fn playback_sys(
                     settings
                 });
 
-                // When we send the play sound event we pass the entity id for the channel. This
+                // When we write the play sound event we pass the entity id for the channel. This
                 // instructs the KiraPlugin to associate the playing sound handle with this entity by
                 // inserting a KiraActiveSounds component. That component can be used to adjust various
                 // aspects of the playing sound at runtime. It will automatically be removed when all
                 // sounds associated with the entity have finished playing.
-                ev_play.send(KiraPlaySoundEvent::new(chan_id, sound));
+                ev_play.write(KiraPlaySoundEvent::new(chan_id, sound));
             } else {
                 warn!(
                     "Sound asset not found for handle: {:?} it may still be loading.",

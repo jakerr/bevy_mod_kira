@@ -56,7 +56,7 @@ fn trigger_play_sys(
             // KiraActiveSounds can later be queried from another system to interact with playing
             // sounds and perform any number of actions provided by the Kira StaticSoundHandle api.
             let sound_data = sound_asset.sound.clone();
-            ev_play.send(KiraPlaySoundEvent::new(eid, sound_data));
+            ev_play.write(KiraPlaySoundEvent::new(eid, sound_data));
         }
     }
 }

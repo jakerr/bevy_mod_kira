@@ -117,7 +117,7 @@ fn ui_sys(
                         if let Some(sound_asset) = assets.get(&asset.0) {
                             let sound_data = sound_asset.sound.clone();
                             let sound_event = KiraPlaySoundEvent::new(eid, sound_data);
-                            ev_play.send(sound_event);
+                            ev_play.write(sound_event);
                         }
                     }
                 }

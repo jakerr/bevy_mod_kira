@@ -145,7 +145,7 @@ fn trigger_play_sys(
         return;
     }
     for (eid, my_sound_data) in my_sound.iter() {
-        ev_play.send(KiraPlaySoundEvent::new(eid, my_sound_data.clone()));
+        ev_play.write(KiraPlaySoundEvent::new(eid, my_sound_data.clone()));
     }
 }
 
