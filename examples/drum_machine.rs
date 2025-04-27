@@ -292,6 +292,9 @@ fn ui_sys(
     let mut machine_ui_res = Ok(());
 
     egui::CentralPanel::default().show(ctx.ctx_mut(), |ui| {
+        let style = ui.style_mut();
+        style.interaction.selectable_labels = false;
+
         egui::warn_if_debug_build(ui);
         let padding = ui.spacing().item_spacing.x;
         StripBuilder::new(ui)
@@ -483,7 +486,7 @@ fn channel_view(
                             ui,
                             Pallete::LeafGreen,
                             &mut info.volume,
-                            1.0..=0.0,
+                            0.0..=1.0,
                             is_muted,
                         );
                     });
@@ -492,7 +495,7 @@ fn channel_view(
                             ui,
                             Pallete::DeepBlue,
                             &mut info.reverb,
-                            0.5..=0.0,
+                            0.0..=0.5,
                             is_muted,
                         );
                     });
@@ -578,8 +581,10 @@ fn channel_title_view(
     info: &mut ChannelInfo,
 ) {
     let rect = ui.available_rect_before_wrap().shrink(1.0);
+    let style = ui.style_mut();
+    style.interaction.selectable_labels = false;
+
     let id = Id::new("channel_title").with(track.id());
-    let touch = ui.interact(rect, id, Sense::click());
     color = if info.muted {
         dark_color(color).into()
     } else {
@@ -589,8 +594,9 @@ fn channel_title_view(
     ui.centered_and_justified(|ui| {
         let text = format!("{}\n{}", &info.name, &info.icon);
         let text = RichText::new(text).color(contrasty(color));
-        ui.label(text);
+        ui.label(text).highlight();
     });
+    let touch = ui.interact(rect, id, Sense::click());
     if touch.clicked() {
         info.muted = !info.muted;
     }
