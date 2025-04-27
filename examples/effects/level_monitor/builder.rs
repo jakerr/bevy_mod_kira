@@ -1,4 +1,4 @@
-use ringbuf::HeapRb;
+use ringbuf::{HeapRb, traits::*};
 
 use kira::track::effect::{Effect, EffectBuilder};
 

@@ -1,7 +1,10 @@
 use std::collections::VecDeque;
 
 use bevy::prelude::*;
-use ringbuf::HeapProducer;
+use ringbuf::{
+    HeapProd,
+    traits::{Observer, *},
+};
 
 use kira::{
     clock::clock_info::ClockInfoProvider, dsp::Frame,
@@ -19,14 +22,17 @@ pub struct LevelSample<const N: usize> {
 }
 
 struct LevelMonitor<const N: usize> {
-    sample_producer: HeapProducer<LevelSample<N>>,
+    sample_producer: HeapProd<LevelSample<N>>,
     // Holds the last N frames.
     // They are only copied to the producer when the producer is empty.
     raw: VecDeque<Frame>,
 }
 
+// Ringbuf is a lock free producer, so we can use it in the audio thread.
+unsafe impl<const N: usize> Sync for LevelMonitor<N> {}
+
 impl<const N: usize> LevelMonitor<N> {
-    fn new(sample_producer: HeapProducer<LevelSample<N>>) -> Self {
+    fn new(sample_producer: HeapProd<LevelSample<N>>) -> Self {
         Self {
             sample_producer,
             raw: VecDeque::new(),
@@ -46,7 +52,7 @@ impl<const N: usize> LevelMonitor<N> {
         // }
         // let sample = LevelSample { window };
 
-        if let Err(sample) = self.sample_producer.push(LevelSample { window }) {
+        if let Err(sample) = self.sample_producer.try_push(LevelSample { window }) {
             warn!(
                 "LevelMonitor: Failed to send sample to consumer: {:?}",
                 sample

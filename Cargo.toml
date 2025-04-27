@@ -11,16 +11,16 @@ repository = "https://github.com/jakerr/bevy_mod_kira"
 rust-version = "1.85.0"
 
 [dependencies]
-anyhow = "1.0.69"
+anyhow = "1.0.98"
 bevy = "0.16.0"
 kira = "0.8.5"
-thiserror = "1.0.50"
+thiserror = "2.0.12"
 
 [dev-dependencies]
 bevy_egui = "0.34.1"
 egui_extras = "0.31.1"
 egui_plot = "0.32.1"
-ringbuf = "0.3.2"
+ringbuf = "0.4.8"
 
 [features]
 default = ["ogg"]

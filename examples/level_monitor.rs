@@ -57,6 +57,9 @@ impl<const N: i32> Default for TimerMs<N> {
 #[derive(Component)]
 struct LevelsHandle<const N: usize>(LevelMonitorHandle<N>);
 
+// Ringbuf is a lock free producer, so we can use it in the audio thread.
+unsafe impl<const N: usize> Sync for LevelsHandle<N> {}
+
 #[derive(Component)]
 struct Panning(f64);
 
