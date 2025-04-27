@@ -59,7 +59,7 @@ impl<const N: usize> LevelMonitor<N> {
 }
 
 impl<const N: usize> Effect for LevelMonitor<N> {
-    fn process(&mut self, input: &mut [Frame], dt: f64, info: &kira::info::Info) {
+    fn process(&mut self, input: &mut [Frame], _dt: f64, _info: &kira::info::Info) {
         for frame in input.iter_mut() {
             self.raw.push_back(*frame);
             if self.raw.len() > N {

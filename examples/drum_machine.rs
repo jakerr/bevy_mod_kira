@@ -1,10 +1,7 @@
-use std::{
-    ops::RangeInclusive,
-    sync::{Arc, Mutex},
-};
+use std::ops::RangeInclusive;
 
 use bevy::{
-    ecs::{entity::EntityHashMap, event::EventId, system::EntityCommands},
+    ecs::{entity::EntityHashMap, system::EntityCommands},
     prelude::*,
 };
 use bevy_egui::{
@@ -59,8 +56,8 @@ impl From<DefaultPattern> for DrumPattern {
     fn from(p: DefaultPattern) -> Self {
         let p = p.0.reverse_bits();
         let mut steps = [false; STEPS];
-        for i in 0..STEPS {
-            steps[i] = (p & (1 << i)) != 0;
+        for (i, item) in steps.iter_mut().enumerate() {
+            *item = (p & (1 << i)) != 0;
         }
         Self { steps }
     }
@@ -168,7 +165,6 @@ fn setup_sys(mut commands: Commands, mut kira: NonSendMut<KiraContext>, loader: 
         false,
         &mut drum_machine,
         &loader,
-        &mut kira,
         &mut filter_track_handle,
     );
     add_instrument_channel(
@@ -178,7 +174,6 @@ fn setup_sys(mut commands: Commands, mut kira: NonSendMut<KiraContext>, loader: 
         false,
         &mut drum_machine,
         &loader,
-        &mut kira,
         &mut filter_track_handle,
     );
     add_instrument_channel(
@@ -188,7 +183,6 @@ fn setup_sys(mut commands: Commands, mut kira: NonSendMut<KiraContext>, loader: 
         false,
         &mut drum_machine,
         &loader,
-        &mut kira,
         &mut filter_track_handle,
     );
     add_instrument_channel(
@@ -198,13 +192,10 @@ fn setup_sys(mut commands: Commands, mut kira: NonSendMut<KiraContext>, loader: 
         true,
         &mut drum_machine,
         &loader,
-        &mut kira,
         &mut filter_track_handle,
     );
 
-    let id = drum_machine
-        .insert(KiraTrackHandle(filter_track_handle))
-        .id();
+    drum_machine.insert(KiraTrackHandle(filter_track_handle));
 }
 
 #[derive(Default)]
@@ -281,11 +272,11 @@ fn apply_levels_sys(
             amplitude,
         );
         track.0.set_volume(volume, Tween::default());
-        let _ = reverb.0.set_mix(info.reverb, Tween::default());
+        reverb.0.set_mix(info.reverb, Tween::default());
     }
     for mut filter in filter.iter_mut() {
         let value = filter.1;
-        let _ = filter.0.set_mix(value, Tween::default());
+        filter.0.set_mix(value, Tween::default());
     }
 }
 
@@ -322,7 +313,7 @@ fn ui_sys(
             .horizontal(|mut strip| {
                 strip.empty();
                 strip.cell(|ui| {
-                    let _ = clock.set_speed(
+                    clock.set_speed(
                         kira::clock::ClockSpeed::TicksPerSecond(steps_per_sec(bpm.0)),
                         Tween::default(),
                     );
@@ -332,9 +323,7 @@ fn ui_sys(
                 strip.empty();
             });
     });
-    if machine_ui_res.is_err() {
-        return machine_ui_res;
-    }
+    machine_ui_res?;
     Ok(())
 }
 
@@ -349,7 +338,6 @@ fn add_instrument_channel(
     default_mute: bool,
     parent: &mut EntityCommands,
     loader: &AssetServer,
-    kira: &mut KiraContext,
     filter_track: &mut TrackHandle,
 ) {
     // The parent passed in here is the drum_machine entity from the setup_sys function.
@@ -622,9 +610,9 @@ fn track_fader_view(
     if is_muted {
         color = mute_color;
     } else {
-        let v = *value as f32;
-        let start = *range.start() as f32;
-        let end = *range.end() as f32;
+        let v = *value;
+        let start = *range.start();
+        let end = *range.end();
         let a = start.min(end);
         let b = start.max(end);
         let color_sat = v / (b - a);

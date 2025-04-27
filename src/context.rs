@@ -1,8 +1,3 @@
-use std::{
-    ops::Deref,
-    sync::{Arc, Mutex},
-};
-
 use anyhow::{Error, anyhow};
 use bevy::prelude::*;
 
@@ -11,10 +6,8 @@ use kira::{
     AudioManager, AudioManagerSettings,
     backend::cpal::CpalBackend,
     clock::{ClockHandle, ClockSpeed},
-    sound::static_sound::{StaticSoundData, StaticSoundHandle},
     track::{TrackBuilder, TrackHandle},
 };
-use std::ops::DerefMut;
 
 /// KiraContext is a non-send resource that provides access to an initialized `kira::AudioManager`.
 /// Storing this in a non-send resource is necessary in order to support environments such as web
@@ -55,10 +48,10 @@ impl KiraContext {
     ) -> Result<KiraPlayingSound, Error> {
         let manager = self.get_manager()?;
         match track {
-            Some(track) => sound.play_in_track(track).map_err(|e| e.into()),
+            Some(track) => sound.play_in_track(track),
             None => {
                 let main_track = manager.main_track();
-                sound.play_in_main_track(main_track).map_err(|e| e.into())
+                sound.play_in_main_track(main_track)
             }
         }
     }

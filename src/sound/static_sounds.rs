@@ -3,7 +3,7 @@ use bevy::asset::io::Reader;
 use bevy::asset::{Asset, AssetLoader, LoadContext};
 use bevy::prelude::{Component, Handle, debug};
 use bevy::reflect::TypePath;
-use kira::sound::static_sound::{StaticSoundData, StaticSoundSettings};
+use kira::sound::static_sound::StaticSoundData;
 use kira::sound::{FromFileError, SoundData};
 use std::io::Cursor;
 use thiserror::Error;

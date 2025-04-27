@@ -1,13 +1,8 @@
 use std::fmt::Debug;
 use std::fmt::Formatter;
-use std::ops::DerefMut;
-use std::sync::Arc;
-use std::sync::Mutex;
 
 use bevy::prelude::*;
 use kira::sound::PlaybackState;
-use kira::track;
-use kira::track::TrackHandle;
 
 use crate::DynamicSoundHandle;
 use crate::KiraPlayable;

@@ -10,10 +10,7 @@ use bevy_mod_kira::{
     KiraTrackHandle,
 };
 use egui_plot::{BarChart, HLine, LineStyle};
-use kira::{
-    sound::static_sound::StaticSoundSettings,
-    track::{TrackBuilder, TrackHandle},
-};
+use kira::{sound::static_sound::StaticSoundSettings, track::TrackBuilder};
 
 mod effects;
 use effects::{LevelMonitorBuilder, LevelMonitorHandle};
@@ -66,9 +63,6 @@ unsafe impl<const N: usize> Sync for LevelsHandle<N> {}
 
 #[derive(Component)]
 struct Panning(f32);
-
-#[derive(Component)]
-struct Track(TrackHandle);
 
 fn setup_sys(mut commands: Commands, loader: Res<AssetServer>, mut kira: NonSendMut<KiraContext>) {
     // See the play_sound.rs example for more detailed comments on how to load and play sounds.

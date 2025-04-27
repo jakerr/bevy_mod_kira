@@ -58,10 +58,11 @@ impl DynamicSoundHandle for MySoundHandle {
     // We need to implement this method so that we can tell kira when the sound has finished
     // playing.
     fn state(&self) -> kira::sound::PlaybackState {
-        self.stopped
-            .load(std::sync::atomic::Ordering::Relaxed)
-            .then_some(kira::sound::PlaybackState::Stopped)
-            .unwrap_or(kira::sound::PlaybackState::Playing)
+        if self.stopped.load(std::sync::atomic::Ordering::Relaxed) {
+            kira::sound::PlaybackState::Stopped
+        } else {
+            kira::sound::PlaybackState::Playing
+        }
     }
 }
 
@@ -85,7 +86,7 @@ impl kira::sound::Sound for MySound {
     }
 
     fn finished(&self) -> bool {
-        return self.stopped.load(std::sync::atomic::Ordering::Relaxed);
+        self.stopped.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 

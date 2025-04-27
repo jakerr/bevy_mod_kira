@@ -51,15 +51,17 @@ fn setup_sys(mut commands: Commands, loader: Res<AssetServer>) {
         Pallete::MintGreen,
         Pallete::GrapePurple,
     ];
-    let mut i = 0;
-    for (ext, enabled) in [
+    for (i, (ext, enabled)) in [
         ("ogg", cfg!(feature = "ogg")),
         ("mp3", cfg!(feature = "mp3")),
         ("wav", cfg!(feature = "wav")),
         ("flac", cfg!(feature = "flac")),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let color = colors[i % colors.len()];
-        let name = format!("say.{}", ext);
+        let name = format!("say.{ext}");
         let asset = if enabled {
             Some(KiraStaticSoundHandle(loader.load(name.clone())))
         } else {
@@ -74,7 +76,6 @@ fn setup_sys(mut commands: Commands, loader: Res<AssetServer>) {
                 asset,
             });
         });
-        i += 1;
     }
 }
 

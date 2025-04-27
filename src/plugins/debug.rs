@@ -26,7 +26,7 @@ struct DebugKiraContext<'a> {
     manager: Option<DebugKiraManager<'a>>,
 }
 
-impl<'a> Debug for DebugKiraContext<'a> {
+impl Debug for DebugKiraContext<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("KiraContext")
             .field("manager", &self.manager)
@@ -34,7 +34,7 @@ impl<'a> Debug for DebugKiraContext<'a> {
     }
 }
 
-impl<'a> Debug for DebugKiraManager<'a> {
+impl Debug for DebugKiraManager<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Manager")
             .field("num_sub_tracks", &self.manager.num_sub_tracks())
