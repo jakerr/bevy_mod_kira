@@ -1,12 +1,12 @@
 use std::fmt::{Debug, Formatter};
 
 use bevy::{
-    prelude::{debug, Entity, Local, NonSendMut, Plugin, Query, Res, Update},
+    prelude::{Entity, Local, NonSendMut, Plugin, Query, Res, Update, debug},
     time::Time,
 };
 use kira::manager::AudioManager;
 
-use crate::{util::TimerMs, KiraContext};
+use crate::{KiraContext, util::TimerMs};
 
 use super::KiraPlayingSounds;
 

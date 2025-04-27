@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_egui::{
-    egui::{self},
     EguiContexts, EguiPlugin,
+    egui::{self},
 };
 use bevy_mod_kira::{
     KiraContext, KiraPlaySoundEvent, KiraPlugin, KiraStaticSoundAsset, KiraStaticSoundHandle,

@@ -1,9 +1,9 @@
-use anyhow::{anyhow, Error};
-use kira::manager::backend::cpal::CpalBackend;
+use anyhow::{Error, anyhow};
 use kira::manager::AudioManager;
-use kira::sound::static_sound::StaticSoundHandle;
+use kira::manager::backend::cpal::CpalBackend;
 use kira::sound::PlaybackState;
 use kira::sound::SoundData;
+use kira::sound::static_sound::StaticSoundHandle;
 use std::any::Any;
 
 /// KiraPlayable is a trait that allows KiraPlugin to play static (sounds loaded from a supported

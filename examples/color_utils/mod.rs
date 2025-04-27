@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use bevy_egui::egui::{epaint::Hsva, Color32, Rgba};
+use bevy_egui::egui::{Color32, Rgba, epaint::Hsva};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Pallete {

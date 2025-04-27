@@ -1,10 +1,10 @@
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use bevy::prelude::*;
 
 use crate::sound::sound_types::{KiraPlayable, KiraPlayingSound};
 use kira::{
     clock::{ClockHandle, ClockSpeed},
-    manager::{backend::cpal::CpalBackend, AudioManager, AudioManagerSettings},
+    manager::{AudioManager, AudioManagerSettings, backend::cpal::CpalBackend},
     sound::static_sound::{StaticSoundData, StaticSoundHandle},
     track::{TrackBuilder, TrackHandle},
 };

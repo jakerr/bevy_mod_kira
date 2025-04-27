@@ -2,15 +2,15 @@
 //! use it to play a sound that is dynamically generated at runtime.
 use std::{
     f64::consts::PI,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, atomic::AtomicBool},
     time::Duration,
 };
 
 use bevy::prelude::*;
 use bevy_mod_kira::{DynamicSoundHandle, KiraPlaySoundEvent, KiraPlayingSounds, KiraPlugin};
 use kira::{
-    clock::clock_info::ClockInfoProvider, modulator::value_provider::ModulatorValueProvider,
-    OutputDestination,
+    OutputDestination, clock::clock_info::ClockInfoProvider,
+    modulator::value_provider::ModulatorValueProvider,
 };
 
 pub fn main() {

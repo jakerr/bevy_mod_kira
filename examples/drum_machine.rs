@@ -1,9 +1,12 @@
 use std::ops::RangeInclusive;
 
-use bevy::{ecs::system::EntityCommands, prelude::*, utils::HashMap};
+use bevy::{
+    ecs::{entity::EntityHashMap, system::EntityCommands},
+    prelude::*,
+};
 use bevy_egui::{
+    EguiContextPass, EguiContexts, EguiPlugin,
     egui::{self, Pos2, Rgba, Stroke},
-    EguiContexts, EguiPlugin,
 };
 use bevy_mod_kira::{
     KiraContext, KiraPlaySoundEvent, KiraPlugin, KiraStaticSoundAsset, KiraStaticSoundHandle,
@@ -13,8 +16,8 @@ use egui_extras::{Size, StripBuilder};
 use kira::{
     clock::ClockHandle,
     track::{
-        effect::{filter::FilterHandle, reverb::ReverbHandle},
         TrackBuilder, TrackHandle, TrackId, TrackRoutes,
+        effect::{filter::FilterHandle, reverb::ReverbHandle},
     },
     tween::Tween,
 };
@@ -106,9 +109,15 @@ pub fn main() {
             }),
             ..default()
         }))
-        .add_plugins((KiraPlugin, EguiPlugin))
+        .add_plugins((
+            KiraPlugin,
+            EguiPlugin {
+                enable_multipass_for_primary_context: true,
+            },
+        ))
         .add_systems(Startup, setup_sys)
-        .add_systems(Update, (playback_sys, apply_levels_sys, ui_sys))
+        .add_systems(Update, (playback_sys, apply_levels_sys))
+        .add_systems(EguiContextPass, ui_sys)
         .run();
 }
 
@@ -194,7 +203,7 @@ fn setup_sys(mut commands: Commands, mut kira: NonSendMut<KiraContext>, loader: 
 }
 
 #[derive(Default)]
-struct LastTicks(HashMap<Entity, u64>);
+struct LastTicks(EntityHashMap<u64>);
 
 fn playback_sys(
     assets: Res<Assets<KiraStaticSoundAsset>>,
@@ -202,14 +211,16 @@ fn playback_sys(
     clock: Query<&MainClock>,
     mut ev_play: EventWriter<KiraPlaySoundEvent>,
     mut last_ticks: Local<LastTicks>,
-) {
+) -> Result<(), BevyError> {
     for (chan_id, sound, track, pattern) in channels.iter() {
-        let clock = &clock.single().0;
+        let clock = clock.single()?;
+        let clock = &clock.0;
         let clock_ticks = clock.time().ticks;
         let last_tick = last_ticks.0.get(&chan_id).copied().unwrap_or(u64::MAX);
         if clock_ticks == last_tick {
             continue;
         }
+        let last_tick = last_tick.min(clock_ticks);
         if (clock_ticks - last_tick) > 1 {
             // Playback system is not running at the same speed as the clock. Sometimes this
             // system can miss ticks. This seems to happen often when backgrounding the app.
@@ -248,6 +259,7 @@ fn playback_sys(
             }
         }
     }
+    Ok(())
 }
 
 fn apply_levels_sys(
@@ -273,8 +285,12 @@ fn ui_sys(
     chan_mute: Query<&mut ChannelInfo>,
     mut bpm: Query<&mut Bpm>,
     mut filter: Query<&mut MainFilter>,
-) {
-    let clock = &clock.single().0;
+) -> Result<(), BevyError> {
+    let clock = &clock.single()?.0;
+    let mut bpm = bpm.single_mut()?;
+    let mut filter = filter.single_mut()?;
+    let mut machine_ui_res = Ok(());
+
     egui::CentralPanel::default().show(ctx.ctx_mut(), |ui| {
         egui::warn_if_debug_build(ui);
         let padding = ui.spacing().item_spacing.x;
@@ -286,18 +302,21 @@ fn ui_sys(
             .size(Size::remainder())
             .horizontal(|mut strip| {
                 strip.empty();
-                let mut bpm = bpm.single_mut();
-                let mut filter = filter.single_mut();
                 strip.cell(|ui| {
                     let _ = clock.set_speed(
                         kira::clock::ClockSpeed::TicksPerSecond(steps_per_sec(bpm.0)),
                         Tween::default(),
                     );
-                    machine_ui(ui, &mut bpm, &mut filter, channel_ids, channels, chan_mute);
+                    machine_ui_res =
+                        machine_ui(ui, &mut bpm, &mut filter, channel_ids, channels, chan_mute);
                 });
                 strip.empty();
             });
     });
+    if machine_ui_res.is_err() {
+        return machine_ui_res;
+    }
+    Ok(())
 }
 
 //
@@ -374,11 +393,12 @@ fn machine_ui(
     channel_ids: Query<&Children, With<DrumMachine>>,
     mut channels: Query<(Entity, &mut ChannelTrack, &mut DrumPattern)>,
     mut chan_mute: Query<&mut ChannelInfo>,
-) {
+) -> Result<(), BevyError> {
     let padding_x = ui.spacing().item_spacing.x;
     let padding_y = ui.spacing().item_spacing.y;
     let total_height = (CHANNEL_ROW_HEIGHT + padding_y) * 5.0 + MACHINE_V_PADDING * 2.0;
     let bg_color: Color32 = dark_color(Pallete::DeepBlue);
+    let chan_ids = channel_ids.single()?;
     StripBuilder::new(ui)
         .size(Size::remainder())
         .size(Size::exact(total_height))
@@ -402,16 +422,15 @@ fn machine_ui(
                             ui.add(
                                 egui::Slider::new(&mut bpm.0, 20.0..=220.0)
                                     .text("BPM")
-                                    .clamp_to_range(true),
+                                    .clamping(egui::SliderClamping::Always),
                             );
                             ui.add(
                                 egui::Slider::new(&mut filter.1, 0.0..=1.0)
                                     .text("Filter")
-                                    .clamp_to_range(true),
+                                    .clamping(egui::SliderClamping::Always),
                             );
                             ui.add_space(10.0);
                             // Visit channels in order of the drum machine container.
-                            let chan_ids = channel_ids.single();
                             let mut in_order = channels.iter_many_mut(chan_ids);
 
                             let mut chan_number = 0;
@@ -435,6 +454,7 @@ fn machine_ui(
             });
             strip.empty();
         });
+    Ok(())
 }
 
 fn channel_view(
@@ -612,7 +632,7 @@ fn track_fader_view(
         egui::Slider::new(value, range)
             .vertical()
             .show_value(false)
-            .clamp_to_range(true),
+            .clamping(egui::SliderClamping::Always),
     );
 }
 

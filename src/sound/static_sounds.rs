@@ -1,9 +1,8 @@
 use anyhow::Result;
 use bevy::asset::io::Reader;
-use bevy::asset::{Asset, AssetLoader, AsyncReadExt, LoadContext};
-use bevy::prelude::{debug, Component, Handle};
-use bevy::reflect::{TypePath, TypeUuid};
-use bevy::utils::BoxedFuture;
+use bevy::asset::{Asset, AssetLoader, LoadContext};
+use bevy::prelude::{Component, Handle, debug};
+use bevy::reflect::TypePath;
 use kira::sound::static_sound::{StaticSoundData, StaticSoundSettings};
 use kira::sound::{FromFileError, SoundData};
 use std::io::Cursor;
@@ -17,8 +16,7 @@ pub enum KiraError {
     FromFileError(#[from] FromFileError),
 }
 
-#[derive(TypeUuid, TypePath, Clone, Asset)]
-#[uuid = "4e6dfb5e-8196-4974-8790-5bae8c01ac2d"]
+#[derive(TypePath, Clone, Asset)]
 pub struct SoundAsset<T>
 where
     T: TypePath + Send + Sync + SoundData + Clone,
@@ -26,8 +24,7 @@ where
     pub sound: T,
 }
 
-#[derive(Clone, TypeUuid, TypePath)]
-#[uuid = "10eed7c5-cfaa-49c7-9fa4-c17735e5ef25"]
+#[derive(Clone, TypePath)]
 pub struct KiraStaticSoundData(pub StaticSoundData);
 
 impl SoundData for KiraStaticSoundData {
@@ -63,25 +60,21 @@ impl AssetLoader for StaticSoundFileLoader {
     type Settings = ();
     type Error = KiraError;
 
-    fn load<'a>(
-        &'a self,
-        reader: &'a mut Reader,
-        _settings: &'a Self::Settings,
-        _load_context: &'a mut LoadContext,
-    ) -> BoxedFuture<'a, Result<Self::Asset, KiraError>> {
-        Box::pin(async move {
-            let mut sound_bytes = vec![];
-            reader.read_to_end(&mut sound_bytes).await?;
-            debug!("Loading sound with {} bytes", sound_bytes.len());
-            let sound = StaticSoundData::from_cursor(
-                Cursor::new(sound_bytes),
-                StaticSoundSettings::default(),
-            )?;
-            let asset: KiraStaticSoundAsset = KiraStaticSoundAsset {
-                sound: KiraStaticSoundData(sound.clone()),
-            };
-            Ok(asset)
-        })
+    async fn load(
+        &self,
+        reader: &mut dyn Reader,
+        _settings: &Self::Settings,
+        _load_context: &mut LoadContext<'_>,
+    ) -> Result<Self::Asset, KiraError> {
+        let mut sound_bytes = vec![];
+        reader.read_to_end(&mut sound_bytes).await?;
+        debug!("Loading sound with {} bytes", sound_bytes.len());
+        let sound =
+            StaticSoundData::from_cursor(Cursor::new(sound_bytes), StaticSoundSettings::default())?;
+        let asset: KiraStaticSoundAsset = KiraStaticSoundAsset {
+            sound: KiraStaticSoundData(sound.clone()),
+        };
+        Ok(asset)
     }
 
     fn extensions(&self) -> &[&str] {

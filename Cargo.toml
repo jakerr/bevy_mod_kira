@@ -1,25 +1,25 @@
 [package]
 name = "bevy_mod_kira"
 version = "0.2.0"
-edition = "2021"
+edition = "2024"
 categories = ["game-engines", "multimedia::audio"]
 description = "A plugin that integrates the Kira audio library for use in the Bevy game engine"
 keywords = ["game", "bevy", "kira", "audio", "sound"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/jakerr/bevy_mod_kira"
-rust-version = "1.67.0"
+rust-version = "1.85.0"
 
 [dependencies]
 anyhow = "1.0.69"
-bevy = "0.12.0"
+bevy = "0.16.0"
 kira = "0.8.5"
 thiserror = "1.0.50"
 
 [dev-dependencies]
-bevy_egui = "0.23.0"
-egui_extras = "0.23.0"
-egui_plot = "0.23.0"
+bevy_egui = "0.34.1"
+egui_extras = "0.31.1"
+egui_plot = "0.32.1"
 ringbuf = "0.3.2"
 
 [features]

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy_egui::{
-    egui::{self, Color32, RichText},
     EguiContexts, EguiPlugin,
+    egui::{self, Color32, RichText},
 };
 use bevy_mod_kira::{KiraPlaySoundEvent, KiraPlugin, KiraStaticSoundAsset, KiraStaticSoundHandle};
 
@@ -101,11 +101,7 @@ fn ui_sys(
                         .size(24.0)
                         .background_color(bg_color)
                         .color(text_color);
-                    if info.enabled {
-                        r
-                    } else {
-                        r.strikethrough()
-                    }
+                    if info.enabled { r } else { r.strikethrough() }
                 };
                 let button = egui::Button::new(text).fill(bg_color);
                 let click = ui.add(button).clicked();

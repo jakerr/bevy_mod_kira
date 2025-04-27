@@ -4,12 +4,12 @@ use std::fmt::Formatter;
 use bevy::prelude::*;
 use kira::sound::PlaybackState;
 
+use crate::DynamicSoundHandle;
+use crate::KiraPlayable;
 pub use crate::sound::{
     sound_types::KiraPlayingSound,
     static_sounds::{KiraStaticSoundAsset, StaticSoundFileLoader},
 };
-use crate::DynamicSoundHandle;
-use crate::KiraPlayable;
 use kira::sound::static_sound::StaticSoundHandle;
 
 use crate::KiraContext;
