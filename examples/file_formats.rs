@@ -86,7 +86,12 @@ fn ui_sys(
     mut ev_play: EventWriter<KiraPlaySoundEvent>,
 ) -> Result<(), BevyError> {
     let all_formats = formats.single()?;
-    egui::CentralPanel::default().show(ctx.ctx_mut(), |ui| {
+    let ctx = ctx.try_ctx_mut();
+    if ctx.is_none() {
+        // Likely window is being closed on App exit.
+        return Ok(());
+    }
+    egui::CentralPanel::default().show(ctx.unwrap(), |ui| {
         ui.vertical_centered_justified(|ui| {
             ui.label(RichText::from("File Formats").size(32.0));
             let mut some_disabled = false;
@@ -116,7 +121,7 @@ fn ui_sys(
                     if let Some(asset) = &info.asset {
                         if let Some(sound_asset) = assets.get(&asset.0) {
                             let sound_data = sound_asset.sound.clone();
-                            let sound_event = KiraPlaySoundEvent::new(eid, sound_data);
+                            let sound_event = KiraPlaySoundEvent::new(eid, None, sound_data);
                             ev_play.write(sound_event);
                         }
                     }

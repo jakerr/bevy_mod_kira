@@ -1,10 +1,14 @@
-use anyhow::{Error, anyhow};
-use kira::manager::AudioManager;
-use kira::manager::backend::cpal::CpalBackend;
-use kira::sound::PlaybackState;
-use kira::sound::SoundData;
-use kira::sound::static_sound::StaticSoundHandle;
 use std::any::Any;
+
+use anyhow::{Error, anyhow};
+use bevy::ecs::component::Component;
+use kira::{
+    sound::{PlaybackState, SoundData, static_sound::StaticSoundHandle},
+    track::{MainTrackHandle, TrackHandle},
+};
+
+#[derive(Component)]
+pub struct KiraTrackHandle(pub TrackHandle);
 
 /// KiraPlayable is a trait that allows KiraPlugin to play static (sounds loaded from a supported
 /// sound file) and dynamic sounds implementations of `kira::sound::Sound`.
@@ -18,10 +22,8 @@ use std::any::Any;
 ///  2. The handle type that implements [`DynamicSoundHandle`].
 ///  3. The sound type that implements `kira::sound::Sound`.
 pub trait KiraPlayable: Send + Sync + 'static {
-    fn play_in_manager(
-        &self,
-        manager: &mut AudioManager<CpalBackend>,
-    ) -> Result<KiraPlayingSound, Error>;
+    fn play_in_track(&self, track: &mut KiraTrackHandle) -> Result<KiraPlayingSound, Error>;
+    fn play_in_main_track(&self, track: &mut MainTrackHandle) -> Result<KiraPlayingSound, Error>;
 }
 
 pub trait Downcastable: Any + Send + Sync {
@@ -68,11 +70,14 @@ where
     D: Send + Sync + Clone + 'static,
     D::Handle: Into<KiraPlayingSound>,
 {
-    fn play_in_manager(
-        &self,
-        manager: &mut AudioManager<CpalBackend>,
-    ) -> Result<KiraPlayingSound, Error> {
-        let res = manager.play::<D>(self.clone());
+    fn play_in_track(&self, track: &mut KiraTrackHandle) -> Result<KiraPlayingSound, Error> {
+        let res = track.0.play(self.clone());
+        res.map_err(|_e| anyhow!("failed to play sound: {}", std::any::type_name::<D>()))
+            .map(|handle| handle.into())
+    }
+
+    fn play_in_main_track(&self, track: &mut MainTrackHandle) -> Result<KiraPlayingSound, Error> {
+        let res = track.play(self.clone());
         res.map_err(|_e| anyhow!("failed to play sound: {}", std::any::type_name::<D>()))
             .map(|handle| handle.into())
     }

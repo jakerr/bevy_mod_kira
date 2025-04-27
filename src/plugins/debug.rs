@@ -4,7 +4,7 @@ use bevy::{
     prelude::{Entity, Local, NonSendMut, Plugin, Query, Res, Update, debug},
     time::Time,
 };
-use kira::manager::AudioManager;
+use kira::AudioManager;
 
 use crate::{KiraContext, util::TimerMs};
 
@@ -37,11 +37,9 @@ impl<'a> Debug for DebugKiraContext<'a> {
 impl<'a> Debug for DebugKiraManager<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Manager")
-            .field("state", &self.manager.state())
-            .field("num_sounds", &self.manager.num_sounds())
             .field("num_sub_tracks", &self.manager.num_sub_tracks())
             .field("num_clocks", &self.manager.num_clocks())
-            .field("sound_capacity", &self.manager.sound_capacity())
+            .field("send_track_capacity", &self.manager.send_track_capacity())
             .field("sub_track_capacity", &self.manager.sub_track_capacity())
             .field("clock_capacity", &self.manager.clock_capacity())
             .finish()

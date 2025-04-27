@@ -1,7 +1,10 @@
-use std::ops::RangeInclusive;
+use std::{
+    ops::RangeInclusive,
+    sync::{Arc, Mutex},
+};
 
 use bevy::{
-    ecs::{entity::EntityHashMap, system::EntityCommands},
+    ecs::{entity::EntityHashMap, event::EventId, system::EntityCommands},
     prelude::*,
 };
 use bevy_egui::{
@@ -10,16 +13,19 @@ use bevy_egui::{
 };
 use bevy_mod_kira::{
     KiraContext, KiraPlaySoundEvent, KiraPlugin, KiraStaticSoundAsset, KiraStaticSoundHandle,
+    KiraTrackHandle,
 };
 use egui::{Color32, Id, RichText, Sense};
 use egui_extras::{Size, StripBuilder};
 use kira::{
+    Decibels, Tween, Tweenable,
     clock::ClockHandle,
-    track::{
-        TrackBuilder, TrackHandle, TrackId, TrackRoutes,
-        effect::{filter::FilterHandle, reverb::ReverbHandle},
+    effect::{
+        filter::{FilterBuilder, FilterHandle},
+        reverb::{ReverbBuilder, ReverbHandle},
     },
-    tween::Tween,
+    sound::static_sound::StaticSoundSettings,
+    track::{TrackBuilder, TrackHandle},
 };
 
 mod color_utils;
@@ -71,16 +77,13 @@ struct Bpm(f64);
 #[derive(Component)]
 struct MainClock(ClockHandle);
 
-#[derive(Component)]
-struct ChannelTrack(TrackHandle);
-
-#[derive(Component)]
+#[derive(Component, Debug)]
 struct ChannelInfo {
     name: String,
     muted: bool,
     icon: String,
-    volume: f64,
-    reverb: f64,
+    volume: f32,
+    reverb: f32,
 }
 
 impl Default for ChannelInfo {
@@ -127,7 +130,7 @@ struct TrackReverb(ReverbHandle);
 #[derive(Component)]
 // We'll store a float for our filter cutoff setting so it's easy to map to an egui slider and then
 // apply in the apply_levels_sys.
-struct MainFilter(FilterHandle, f64);
+struct MainFilter(FilterHandle, f32);
 
 #[derive(Component)]
 struct DrumMachine; // Tag component
@@ -142,22 +145,20 @@ fn setup_sys(mut commands: Commands, mut kira: NonSendMut<KiraContext>, loader: 
     drum_machine.insert(Bpm(BPM));
     // This tells Kira to add a new clock and associate it with the drum machine entity.
     // Clock handles will be added to the KiraClocks component on that entity.
-    let clock_handle = kira
+    let mut clock_handle = kira
         .add_clock(kira::clock::ClockSpeed::TicksPerSecond(STEP_PER_SEC))
         .expect("Failed to create clock.");
-    clock_handle.start().expect("Failed to start clock");
+    clock_handle.start();
     drum_machine.insert(MainClock(clock_handle));
 
     // Create a track to hold the filter effect we'll route every channel's individual track through
     // this one shared filter.
-    let filter = kira::track::effect::filter::FilterBuilder::new().cutoff(440.0);
+    let filter = FilterBuilder::new().cutoff(440.0);
     let mut filter_track_builder = TrackBuilder::new();
     let filter_handle = filter_track_builder.add_effect(filter);
-    let filter_track_handle = kira
+    let mut filter_track_handle = kira
         .add_track(filter_track_builder)
         .expect("Failed to create filter track.");
-    let filter_track_id = filter_track_handle.id();
-    drum_machine.insert(ChannelTrack(filter_track_handle));
     drum_machine.insert(MainFilter(filter_handle, 0.5));
 
     add_instrument_channel(
@@ -168,7 +169,7 @@ fn setup_sys(mut commands: Commands, mut kira: NonSendMut<KiraContext>, loader: 
         &mut drum_machine,
         &loader,
         &mut kira,
-        dbg!(filter_track_id),
+        &mut filter_track_handle,
     );
     add_instrument_channel(
         "hat.ogg",
@@ -178,7 +179,7 @@ fn setup_sys(mut commands: Commands, mut kira: NonSendMut<KiraContext>, loader: 
         &mut drum_machine,
         &loader,
         &mut kira,
-        filter_track_id,
+        &mut filter_track_handle,
     );
     add_instrument_channel(
         "snare.ogg",
@@ -188,7 +189,7 @@ fn setup_sys(mut commands: Commands, mut kira: NonSendMut<KiraContext>, loader: 
         &mut drum_machine,
         &loader,
         &mut kira,
-        filter_track_id,
+        &mut filter_track_handle,
     );
     add_instrument_channel(
         "hit.ogg",
@@ -198,8 +199,12 @@ fn setup_sys(mut commands: Commands, mut kira: NonSendMut<KiraContext>, loader: 
         &mut drum_machine,
         &loader,
         &mut kira,
-        filter_track_id,
+        &mut filter_track_handle,
     );
+
+    let id = drum_machine
+        .insert(KiraTrackHandle(filter_track_handle))
+        .id();
 }
 
 #[derive(Default)]
@@ -207,12 +212,12 @@ struct LastTicks(EntityHashMap<u64>);
 
 fn playback_sys(
     assets: Res<Assets<KiraStaticSoundAsset>>,
-    channels: Query<(Entity, &KiraStaticSoundHandle, &ChannelTrack, &DrumPattern)>,
+    channels: Query<(Entity, &KiraStaticSoundHandle, &DrumPattern)>,
     clock: Query<&MainClock>,
     mut ev_play: EventWriter<KiraPlaySoundEvent>,
     mut last_ticks: Local<LastTicks>,
 ) -> Result<(), BevyError> {
-    for (chan_id, sound, track, pattern) in channels.iter() {
+    for (chan_id, sound, pattern) in channels.iter() {
         let clock = clock.single()?;
         let clock = &clock.0;
         let clock_ticks = clock.time().ticks;
@@ -235,14 +240,12 @@ fn playback_sys(
         let next_play_step = clock_ticks as usize % STEPS;
         if pattern.steps[next_play_step] {
             if let Some(sound_asset) = assets.get(&sound.0) {
-                let sound = sound_asset.sound.0.with_modified_settings(|mut settings| {
+                let sound = sound_asset.sound.0.with_settings(StaticSoundSettings {
                     // We calculate next_play_step as the the step at current clock time, but we
                     // want to start the sound right at precise tick so every sound will be
                     // triggered at a 1 tick offset.
-                    settings = settings
-                        .output_destination(&track.0)
-                        .start_time(clock.time() + 1);
-                    settings
+                    start_time: (clock.time() + 1).into(),
+                    ..Default::default()
                 });
 
                 // When we write the play sound event we pass the entity id for the channel. This
@@ -250,7 +253,7 @@ fn playback_sys(
                 // inserting a KiraActiveSounds component. That component can be used to adjust various
                 // aspects of the playing sound at runtime. It will automatically be removed when all
                 // sounds associated with the entity have finished playing.
-                ev_play.write(KiraPlaySoundEvent::new(chan_id, sound));
+                ev_play.write(KiraPlaySoundEvent::new(chan_id, Some(chan_id), sound));
             } else {
                 warn!(
                     "Sound asset not found for handle: {:?} it may still be loading.",
@@ -263,12 +266,21 @@ fn playback_sys(
 }
 
 fn apply_levels_sys(
-    mut channels: Query<(&ChannelInfo, &mut ChannelTrack, &mut TrackReverb), Changed<ChannelInfo>>,
+    mut channels: Query<
+        (&ChannelInfo, &mut KiraTrackHandle, &mut TrackReverb),
+        Changed<ChannelInfo>,
+    >,
     mut filter: Query<&mut MainFilter>,
 ) {
-    for (info, track, mut reverb) in channels.iter_mut() {
-        let volume = if info.muted { 0.0 } else { info.volume };
-        let _ = track.0.set_volume(volume, Tween::default());
+    for (info, mut track, mut reverb) in channels.iter_mut() {
+        println!("Change...");
+        let amplitude = if info.muted { 0.0 } else { info.volume as f64 };
+        let volume = <kira::Decibels as Tweenable>::interpolate(
+            Decibels::SILENCE,
+            Decibels::IDENTITY,
+            amplitude,
+        );
+        track.0.set_volume(volume, Tween::default());
         let _ = reverb.0.set_mix(info.reverb, Tween::default());
     }
     for mut filter in filter.iter_mut() {
@@ -279,19 +291,23 @@ fn apply_levels_sys(
 
 fn ui_sys(
     mut ctx: EguiContexts,
-    clock: Query<&MainClock>,
+    mut clock: Query<&mut MainClock>,
     channel_ids: Query<&Children, With<DrumMachine>>,
-    channels: Query<(Entity, &mut ChannelTrack, &mut DrumPattern)>,
+    channels: Query<(Entity, &mut DrumPattern)>,
     chan_mute: Query<&mut ChannelInfo>,
     mut bpm: Query<&mut Bpm>,
     mut filter: Query<&mut MainFilter>,
 ) -> Result<(), BevyError> {
-    let clock = &clock.single()?.0;
+    let clock = &mut clock.single_mut()?.0;
     let mut bpm = bpm.single_mut()?;
     let mut filter = filter.single_mut()?;
     let mut machine_ui_res = Ok(());
-
-    egui::CentralPanel::default().show(ctx.ctx_mut(), |ui| {
+    let ctx = ctx.try_ctx_mut();
+    if ctx.is_none() {
+        // Likely window is being closed on App exit.
+        return Ok(());
+    }
+    egui::CentralPanel::default().show(ctx.unwrap(), |ui| {
         let style = ui.style_mut();
         style.interaction.selectable_labels = false;
 
@@ -334,7 +350,7 @@ fn add_instrument_channel(
     parent: &mut EntityCommands,
     loader: &AssetServer,
     kira: &mut KiraContext,
-    filter_track_id: TrackId,
+    filter_track: &mut TrackHandle,
 ) {
     // The parent passed in here is the drum_machine entity from the setup_sys function.
     // We are adding a child entity to the drum_machine entity for each instrument channel.
@@ -356,24 +372,24 @@ fn add_instrument_channel(
         // Next we add a track to the channel and adding a reverb effect to the track. Both of these
         // steps are optional. If you don't specify a track when playing a sound it will play on
         // a default Main track.
-        let reverb = kira::track::effect::reverb::ReverbBuilder::new()
-            .mix(0.0)
-            .stereo_width(0.0);
-        let volume = if default_mute { 0.0 } else { 1.0 };
-        let mut track = TrackBuilder::new()
-            .volume(volume)
-            .routes(TrackRoutes::parent(filter_track_id));
+        let reverb = ReverbBuilder::new().mix(0.0).stereo_width(0.0);
+        let volume = if default_mute {
+            Decibels::SILENCE
+        } else {
+            Decibels::IDENTITY
+        };
+        let mut track = TrackBuilder::new().volume(volume);
+        let reverb_handle = track.add_effect(reverb);
+        channel.insert(TrackReverb(reverb_handle));
 
         // The reverb handle is returned directly from the track builder even before we've sent it
         // to Kira so it's our responsibility to hold onto it in a component if we want to be able
         // to modify it later.
-        let reverb_handle = track.add_effect(reverb);
-        channel.insert(TrackReverb(reverb_handle));
 
         // We send the track builder to Kira along with the entity id for this channel. Once added
         // the KiraPlugin will add the track to KiraTracks component on the channel entity.
-        let track_handle = kira.add_track(track).expect("Failed to add track to Kira.");
-        channel.insert(ChannelTrack(track_handle));
+        let track_handle = filter_track.add_sub_track(track).unwrap();
+        channel.insert(KiraTrackHandle(track_handle));
 
         // Finally we insert the default pattern for this channel.
         channel.insert(default_pattern.into());
@@ -394,7 +410,7 @@ fn machine_ui(
     filter: &mut MainFilter,
     // Used to draw the channels in the correct order.
     channel_ids: Query<&Children, With<DrumMachine>>,
-    mut channels: Query<(Entity, &mut ChannelTrack, &mut DrumPattern)>,
+    mut channels: Query<(Entity, &mut DrumPattern)>,
     mut chan_mute: Query<&mut ChannelInfo>,
 ) -> Result<(), BevyError> {
     let padding_x = ui.spacing().item_spacing.x;
@@ -437,17 +453,9 @@ fn machine_ui(
                             let mut in_order = channels.iter_many_mut(chan_ids);
 
                             let mut chan_number = 0;
-                            while let Some((chan_id, mut track, mut pattern)) =
-                                in_order.fetch_next()
-                            {
+                            while let Some((chan_id, mut pattern)) = in_order.fetch_next() {
                                 let mut chan_mut = chan_mute.get_mut(chan_id).unwrap();
-                                channel_view(
-                                    ui,
-                                    chan_number,
-                                    &mut chan_mut,
-                                    &mut track.0,
-                                    &mut pattern,
-                                );
+                                channel_view(ui, chan_number, &mut chan_mut, &mut pattern);
                                 chan_number += 1;
                             }
                             control_legend_view(ui);
@@ -464,7 +472,6 @@ fn channel_view(
     ui: &mut egui::Ui,
     channel_number: u32,
     info: &mut ChannelInfo,
-    track: &mut TrackHandle,
     drum_pattern: &mut DrumPattern,
 ) {
     StripBuilder::new(ui)
@@ -478,7 +485,7 @@ fn channel_view(
                     let base_color: Rgba =
                         shift_color(Pallete::FreshGreen, (channel_number + 1) as f32 * 30.0).into();
                     strip.cell(|ui| {
-                        channel_title_view(ui, base_color, track, info);
+                        channel_title_view(ui, base_color, info);
                     });
                     let is_muted = info.muted;
                     strip.cell(|ui| {
@@ -574,17 +581,12 @@ fn control_legend_view(ui: &mut egui::Ui) {
         });
 }
 
-fn channel_title_view(
-    ui: &mut egui::Ui,
-    mut color: Rgba,
-    track: &mut TrackHandle,
-    info: &mut ChannelInfo,
-) {
+fn channel_title_view(ui: &mut egui::Ui, mut color: Rgba, info: &mut ChannelInfo) {
     let rect = ui.available_rect_before_wrap().shrink(1.0);
     let style = ui.style_mut();
     style.interaction.selectable_labels = false;
 
-    let id = Id::new("channel_title").with(track.id());
+    let id = Id::new("channel_title").with(info.name.clone());
     color = if info.muted {
         dark_color(color).into()
     } else {
@@ -605,8 +607,8 @@ fn channel_title_view(
 fn track_fader_view(
     ui: &mut egui::Ui,
     color: impl Into<Rgba>,
-    value: &mut f64,
-    range: RangeInclusive<f64>,
+    value: &mut f32,
+    range: RangeInclusive<f32>,
     is_muted: bool,
 ) {
     let height = ui.available_height();

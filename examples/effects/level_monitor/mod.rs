@@ -6,10 +6,7 @@ use ringbuf::{
     traits::{Observer, *},
 };
 
-use kira::{
-    clock::clock_info::ClockInfoProvider, dsp::Frame,
-    modulator::value_provider::ModulatorValueProvider, track::effect::Effect,
-};
+use kira::{Frame, effect::Effect};
 
 mod builder;
 mod handle;
@@ -62,18 +59,13 @@ impl<const N: usize> LevelMonitor<N> {
 }
 
 impl<const N: usize> Effect for LevelMonitor<N> {
-    fn process(
-        &mut self,
-        input: Frame,
-        _dt: f64,
-        _clock_info_provider: &ClockInfoProvider,
-        _modulator_value_provider: &ModulatorValueProvider,
-    ) -> Frame {
-        self.raw.push_back(input);
-        if self.raw.len() > N {
-            self.raw.pop_front();
+    fn process(&mut self, input: &mut [Frame], dt: f64, info: &kira::info::Info) {
+        for frame in input.iter_mut() {
+            self.raw.push_back(*frame);
+            if self.raw.len() > N {
+                self.raw.pop_front();
+            }
+            self.send_sample();
         }
-        self.send_sample();
-        input
     }
 }

@@ -7,9 +7,13 @@ use bevy_egui::{
 };
 use bevy_mod_kira::{
     KiraContext, KiraPlaySoundEvent, KiraPlugin, KiraStaticSoundAsset, KiraStaticSoundHandle,
+    KiraTrackHandle,
 };
 use egui_plot::{BarChart, HLine, LineStyle};
-use kira::track::{TrackBuilder, TrackHandle};
+use kira::{
+    sound::static_sound::StaticSoundSettings,
+    track::{TrackBuilder, TrackHandle},
+};
 
 mod effects;
 use effects::{LevelMonitorBuilder, LevelMonitorHandle};
@@ -61,7 +65,7 @@ struct LevelsHandle<const N: usize>(LevelMonitorHandle<N>);
 unsafe impl<const N: usize> Sync for LevelsHandle<N> {}
 
 #[derive(Component)]
-struct Panning(f64);
+struct Panning(f32);
 
 #[derive(Component)]
 struct Track(TrackHandle);
@@ -84,12 +88,12 @@ fn setup_sys(mut commands: Commands, loader: Res<AssetServer>, mut kira: NonSend
     let track_handle = kira
         .add_track(track)
         .expect("Failed to add track to KiraContext");
-    entity.insert(Track(track_handle));
+    entity.insert(KiraTrackHandle(track_handle));
 }
 
 fn trigger_play_sys(
     assets: Res<Assets<KiraStaticSoundAsset>>,
-    query: Query<(Entity, &KiraStaticSoundHandle, &Track, &Panning)>,
+    query: Query<(Entity, &KiraStaticSoundHandle, &Panning)>,
     time: Res<Time>,
     mut looper: Local<TimerMs<1000>>,
     mut ev_play: EventWriter<KiraPlaySoundEvent>,
@@ -98,13 +102,14 @@ fn trigger_play_sys(
     if !looper.timer.just_finished() {
         return;
     }
-    for (eid, sound_handle, track, panning) in query.iter() {
+    for (eid, sound_handle, panning) in query.iter() {
         if let Some(sound_asset) = assets.get(&sound_handle.0) {
             let sound_data = sound_asset.sound.clone();
-            let sound = sound_data.0.with_modified_settings(|settings| {
-                settings.output_destination(track.0.id()).panning(panning.0)
+            let sound = sound_data.0.with_settings(StaticSoundSettings {
+                panning: panning.0.into(),
+                ..default()
             });
-            ev_play.write(KiraPlaySoundEvent::new(eid, sound));
+            ev_play.write(KiraPlaySoundEvent::new(eid, Some(eid), sound));
         }
     }
 }
@@ -126,6 +131,12 @@ fn ui_sys(
     mut query: Query<(&mut LevelsHandle<SAMPLES>, &mut Panning)>,
     mut peaks: Local<Peaks>,
 ) -> Result<(), BevyError> {
+    let ctx = ctx.try_ctx_mut();
+    if ctx.is_none() {
+        // Likely window is being closed on App exit.
+        return Ok(());
+    }
+
     let (mut monitor_handle, mut panning) = query.single_mut()?;
     // Pull a sample containing a window of SAMPLES frames from the LevelMonitor effect.
     // See the level_monitor/mod.rs file to see how these samples are extracted.
@@ -158,7 +169,7 @@ fn ui_sys(
     egui::Window::new("Level Monitor")
         .default_width(600.0)
         .default_height(400.0)
-        .show(ctx.ctx_mut(), |ui| {
+        .show(ctx.unwrap(), |ui| {
             ui.horizontal(|ui| {
                 ui.label("Panning");
                 ui.add(egui::Slider::new(&mut panning.0, 0.0..=1.0).text("Panning"));

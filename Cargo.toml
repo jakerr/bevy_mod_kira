@@ -13,7 +13,7 @@ rust-version = "1.85.0"
 [dependencies]
 anyhow = "1.0.98"
 bevy = "0.16.0"
-kira = "0.8.5"
+kira = "0.10.6"
 thiserror = "2.0.12"
 
 [dev-dependencies]

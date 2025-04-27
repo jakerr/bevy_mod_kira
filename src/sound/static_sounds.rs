@@ -69,8 +69,7 @@ impl AssetLoader for StaticSoundFileLoader {
         let mut sound_bytes = vec![];
         reader.read_to_end(&mut sound_bytes).await?;
         debug!("Loading sound with {} bytes", sound_bytes.len());
-        let sound =
-            StaticSoundData::from_cursor(Cursor::new(sound_bytes), StaticSoundSettings::default())?;
+        let sound = StaticSoundData::from_cursor(Cursor::new(sound_bytes))?;
         let asset: KiraStaticSoundAsset = KiraStaticSoundAsset {
             sound: KiraStaticSoundData(sound.clone()),
         };

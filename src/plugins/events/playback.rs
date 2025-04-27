@@ -1,12 +1,18 @@
 use std::fmt::Debug;
 use std::fmt::Formatter;
+use std::ops::DerefMut;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 use bevy::prelude::*;
 use kira::sound::PlaybackState;
+use kira::track;
+use kira::track::TrackHandle;
 
 use crate::DynamicSoundHandle;
 use crate::KiraPlayable;
 pub use crate::sound::sound_types::KiraPlayingSound;
+use crate::sound::sound_types::KiraTrackHandle;
 use kira::sound::static_sound::StaticSoundHandle;
 
 use crate::KiraContext;
@@ -52,14 +58,19 @@ pub struct KiraPlaySoundEvent {
     /// The entity that the playing sound should be associated with via the `KiraPlayingSounds`
     /// component.
     pub(super) entity: Entity,
+    // The entity to look up the TrackHandle for the sound.
+    // If this is `None`, the sound will be played on the default track.
+    // If set the entity must have a `KiraTrackHandle` component.
+    pub(super) track_entity: Option<Entity>,
     /// The sound to play.
     pub(super) sound: Box<dyn KiraPlayable>,
 }
 
 impl KiraPlaySoundEvent {
-    pub fn new(entity: Entity, sound: impl KiraPlayable) -> Self {
+    pub fn new(entity: Entity, track_entity: Option<Entity>, sound: impl KiraPlayable) -> Self {
         Self {
             entity,
+            track_entity,
             sound: Box::new(sound),
         }
     }
@@ -77,16 +88,24 @@ pub(super) fn do_play_sys(
     mut commands: Commands,
     mut kira: NonSendMut<KiraContext>,
     mut query: Query<(Entity, Option<&mut KiraPlayingSounds>)>,
+    mut track_query: Query<&mut KiraTrackHandle>,
     mut ev_play: ResMut<Events<KiraPlaySoundEvent>>,
-) {
+) -> Result<(), BevyError> {
     for event in ev_play.drain() {
-        let sound_handle = match kira.play_dynamic(event.sound) {
+        let mut opt_track = if let Some(track_entity) = event.track_entity {
+            let res = track_query.get_mut(track_entity)?;
+            Some(res)
+        } else {
+            None
+        };
+        let sound_handle = match kira.play(event.sound, opt_track.as_deref_mut()) {
             Ok(s) => s,
             Err(e) => {
                 error!("Error playing sound: {}", e);
                 continue;
             }
         };
+
         if let Ok((eid, active_sounds)) = query.get_mut(event.entity) {
             match active_sounds {
                 Some(mut sounds) => {
@@ -106,6 +125,7 @@ pub(super) fn do_play_sys(
             );
         }
     }
+    Ok(())
 }
 
 pub(super) fn cleanup_inactive_sounds_sys(

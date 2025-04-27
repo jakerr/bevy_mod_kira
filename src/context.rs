@@ -1,13 +1,20 @@
+use std::{
+    ops::Deref,
+    sync::{Arc, Mutex},
+};
+
 use anyhow::{Error, anyhow};
 use bevy::prelude::*;
 
-use crate::sound::sound_types::{KiraPlayable, KiraPlayingSound};
+use crate::sound::sound_types::{KiraPlayable, KiraPlayingSound, KiraTrackHandle};
 use kira::{
+    AudioManager, AudioManagerSettings,
+    backend::cpal::CpalBackend,
     clock::{ClockHandle, ClockSpeed},
-    manager::{AudioManager, AudioManagerSettings, backend::cpal::CpalBackend},
     sound::static_sound::{StaticSoundData, StaticSoundHandle},
     track::{TrackBuilder, TrackHandle},
 };
+use std::ops::DerefMut;
 
 /// KiraContext is a non-send resource that provides access to an initialized `kira::AudioManager`.
 /// Storing this in a non-send resource is necessary in order to support environments such as web
@@ -41,17 +48,19 @@ impl Default for KiraContext {
 }
 
 impl KiraContext {
-    pub fn play(&mut self, sound: StaticSoundData) -> Result<StaticSoundHandle, Error> {
-        let manager = self.get_manager()?;
-        manager.play(sound).map_err(|e| e.into())
-    }
-
-    pub fn play_dynamic(
+    pub fn play(
         &mut self,
         sound: Box<dyn KiraPlayable>,
+        track: Option<&mut KiraTrackHandle>,
     ) -> Result<KiraPlayingSound, Error> {
         let manager = self.get_manager()?;
-        sound.play_in_manager(manager)
+        match track {
+            Some(track) => sound.play_in_track(track).map_err(|e| e.into()),
+            None => {
+                let main_track = manager.main_track();
+                sound.play_in_main_track(main_track).map_err(|e| e.into())
+            }
+        }
     }
 
     pub fn add_clock(&mut self, clock_speed: ClockSpeed) -> Result<ClockHandle, Error> {

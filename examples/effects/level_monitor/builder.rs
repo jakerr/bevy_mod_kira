@@ -1,6 +1,5 @@
+use kira::effect::{Effect, EffectBuilder};
 use ringbuf::{HeapRb, traits::*};
-
-use kira::track::effect::{Effect, EffectBuilder};
 
 use super::{LevelMonitor, LevelMonitorHandle};
 

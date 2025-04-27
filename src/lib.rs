@@ -10,6 +10,6 @@ pub use plugins::{
     events::{KiraPlaySoundEvent, KiraPlayingSounds},
 };
 pub use sound::{
-    sound_types::{DynamicSoundHandle, KiraPlayable, KiraPlayingSound},
+    sound_types::{DynamicSoundHandle, KiraPlayable, KiraPlayingSound, KiraTrackHandle},
     static_sounds::{KiraStaticSoundAsset, KiraStaticSoundHandle, StaticSoundFileLoader},
 };

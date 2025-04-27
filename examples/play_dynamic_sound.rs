@@ -8,10 +8,6 @@ use std::{
 
 use bevy::prelude::*;
 use bevy_mod_kira::{DynamicSoundHandle, KiraPlaySoundEvent, KiraPlayingSounds, KiraPlugin};
-use kira::{
-    OutputDestination, clock::clock_info::ClockInfoProvider,
-    modulator::value_provider::ModulatorValueProvider,
-};
 
 pub fn main() {
     App::new()
@@ -70,38 +66,26 @@ impl DynamicSoundHandle for MySoundHandle {
 }
 
 impl kira::sound::Sound for MySound {
-    fn output_destination(&mut self) -> OutputDestination {
-        OutputDestination::MAIN_TRACK
-    }
-
-    /// We here create a kira::dsp::Frame containing the left and right samples for the sound. We're
-    /// going to create a sine wave with a frequency based on `self.tone`. We scale it so that the
-    /// sine wave fades in and then out over the duration of the sound.
-    fn process(
-        &mut self,
-        dt: f64,
-        _clock_info_provider: &ClockInfoProvider,
-        _modulator_value_provider: &ModulatorValueProvider,
-    ) -> kira::dsp::Frame {
-        self.phase += dt;
-        let tone = (self.phase * self.tone * 2.0 * PI).sin() as f32;
-        let progress = self.phase / self.len;
-        let max = 0.5;
-        // (progress * PI).sin() gives us half of a sine wave in the positive domain. A smooth 0.0
-        // to 1.0 and back to 0.0 over the duration of the sound.
-        let scaled = max * tone * (progress * PI).sin() as f32;
-        if self.phase > self.len {
-            self.stopped
-                .store(true, std::sync::atomic::Ordering::Relaxed);
-        }
-        kira::dsp::Frame {
-            left: scaled,
-            right: scaled,
+    fn process(&mut self, out: &mut [kira::Frame], dt: f64, _info: &kira::info::Info) {
+        for frame in out.iter_mut() {
+            self.phase += dt;
+            // (progress * PI).sin() gives us half of a sine wave in the positive domain. A smooth 0.0
+            // to 1.0 and back to 0.0 over the duration of the sound.
+            let tone = (self.phase * self.tone * 2.0 * PI).sin() as f32;
+            let progress = self.phase / self.len;
+            let max = 0.5;
+            let scaled = max * tone * (progress * PI).sin() as f32;
+            frame.left = scaled;
+            frame.right = scaled;
+            if self.phase > self.len {
+                self.stopped
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+            }
         }
     }
 
     fn finished(&self) -> bool {
-        self.stopped.load(std::sync::atomic::Ordering::Relaxed)
+        return self.stopped.load(std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -145,7 +129,7 @@ fn trigger_play_sys(
         return;
     }
     for (eid, my_sound_data) in my_sound.iter() {
-        ev_play.write(KiraPlaySoundEvent::new(eid, my_sound_data.clone()));
+        ev_play.write(KiraPlaySoundEvent::new(eid, None, my_sound_data.clone()));
     }
 }
 
