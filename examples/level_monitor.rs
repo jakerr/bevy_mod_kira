@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_egui::{
-    EguiContexts, EguiPlugin,
+    EguiContextPass, EguiContexts, EguiPlugin,
     egui::{self},
 };
 use bevy_mod_kira::{
@@ -29,9 +29,15 @@ pub fn main() {
             }),
             ..default()
         }))
-        .add_plugins((KiraPlugin, EguiPlugin))
+        .add_plugins((
+            KiraPlugin,
+            EguiPlugin {
+                enable_multipass_for_primary_context: true,
+            },
+        ))
         .add_systems(Startup, setup_sys)
-        .add_systems(Update, (trigger_play_sys, ui_sys))
+        .add_systems(Update, (trigger_play_sys))
+        .add_systems(EguiContextPass, ui_sys)
         .run();
 }
 
@@ -116,8 +122,8 @@ fn ui_sys(
     mut ctx: EguiContexts,
     mut query: Query<(&mut LevelsHandle<SAMPLES>, &mut Panning)>,
     mut peaks: Local<Peaks>,
-) {
-    let (mut monitor_handle, mut panning) = query.single_mut();
+) -> Result<(), BevyError> {
+    let (mut monitor_handle, mut panning) = query.single_mut()?;
     // Pull a sample containing a window of SAMPLES frames from the LevelMonitor effect.
     // See the level_monitor/mod.rs file to see how these samples are extracted.
     if let Ok(levels) = monitor_handle.0.get_sample() {
@@ -174,21 +180,21 @@ fn ui_sys(
             let right_color = Pallete::AquaBlue;
             plot.show(ui, |plot_ui| {
                 plot_ui.hline(
-                    HLine::new(peaks.left_peak)
+                    HLine::new("Left", peaks.left_peak)
                         .style(LineStyle::Dashed { length: 5.0 })
                         .width(2.0)
-                        .name("Left")
                         .color(left_color),
                 );
                 plot_ui.hline(
-                    HLine::new(peaks.right_peak)
+                    HLine::new("Right", peaks.right_peak)
                         .style(LineStyle::Dashed { length: 5.0 })
                         .width(2.0)
-                        .name("Right")
                         .color(right_color),
                 );
-                plot_ui.bar_chart(BarChart::new(vec![left_bar]).color(left_color));
-                plot_ui.bar_chart(BarChart::new(vec![right_bar]).color(right_color));
+                plot_ui.bar_chart(BarChart::new("Left", vec![left_bar]).color(left_color));
+                plot_ui.bar_chart(BarChart::new("Right", vec![right_bar]).color(right_color));
             });
         });
+
+    Ok(())
 }

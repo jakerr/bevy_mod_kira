@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_egui::{
-    EguiContexts, EguiPlugin,
+    EguiContextPass, EguiContexts, EguiPlugin,
     egui::{self, Color32, RichText},
 };
 use bevy_mod_kira::{KiraPlaySoundEvent, KiraPlugin, KiraStaticSoundAsset, KiraStaticSoundHandle};
@@ -20,9 +20,14 @@ pub fn main() {
             }),
             ..default()
         }))
-        .add_plugins((KiraPlugin, EguiPlugin))
+        .add_plugins((
+            KiraPlugin,
+            EguiPlugin {
+                enable_multipass_for_primary_context: true,
+            },
+        ))
         .add_systems(Startup, setup_sys)
-        .add_systems(Update, ui_sys)
+        .add_systems(EguiContextPass, ui_sys)
         .run();
 }
 
@@ -79,12 +84,13 @@ fn ui_sys(
     formats: Query<&Children, With<AllFormats>>,
     query: Query<(Entity, &FormatInfo)>,
     mut ev_play: EventWriter<KiraPlaySoundEvent>,
-) {
+) -> Result<(), BevyError> {
+    let all_formats = formats.single()?;
     egui::CentralPanel::default().show(ctx.ctx_mut(), |ui| {
         ui.vertical_centered_justified(|ui| {
             ui.label(RichText::from("File Formats").size(32.0));
             let mut some_disabled = false;
-            for &format_id in formats.single() {
+            for &format_id in all_formats {
                 let (eid, info) = query.get(format_id).unwrap();
                 let (name, bg_color, text_color) = if info.enabled {
                     let name = info.file_name.clone();
@@ -125,4 +131,5 @@ fn ui_sys(
             }
         });
     });
+    Ok(())
 }
