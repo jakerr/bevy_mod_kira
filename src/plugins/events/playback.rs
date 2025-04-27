@@ -28,9 +28,9 @@ impl KiraPlayingSounds {
     }
     /// Returns an iterator over all currently playing dynamic sound [`DynamicSoundHandle`] handles
     /// for the specified concrete type `T`.
-    pub fn dynamic_handles<T: 'static>(&self) -> impl Iterator<Item = &T>
+    pub fn dynamic_handles<T>(&self) -> impl Iterator<Item = &T>
     where
-        T: DynamicSoundHandle,
+        T: DynamicSoundHandle + 'static,
     {
         self.0.iter().filter_map(|sound| match sound {
             KiraPlayingSound::Static(_) => None,
