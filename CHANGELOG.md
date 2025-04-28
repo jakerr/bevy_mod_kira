@@ -1,3 +1,27 @@
+# 0.3.0
+
+- **Library Updates**:
+  - Upgraded `bevy` to version 0.16.0.
+  - Upgraded `kira` to version 0.10.6.
+  - Updated all other dependencies to their latest versions.
+
+- **API Enhancements**:
+  - Added support for playing sounds on specific tracks using the
+  `KiraTrackHandle` component. This is to better allign with the Kira API. Track
+  handles for sub-tracks should now be added wrapped in a `KiraTrackHandle`
+  component to any entity that is convienent to associate with the track. When
+  writing a KiraPlaySoundEvent, there is an optional `track_entity` field that
+  can be used to target a specific track. If not provided, the sound will play
+  on the main track (see the drum_machine example).
+
+  - Enhanced the `KiraPlayable` trait to support playing sounds on main or custom tracks.
+
+- **Examples**:
+  - Updated examples to reflect the new API changes:
+
+- **Code Refactoring**:
+  - Simplified and modernized the codebase, including better error handling and updated function signatures.
+
 # 0.2.0
 
 - Upgrade to bevy 0.12
