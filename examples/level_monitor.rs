@@ -78,7 +78,7 @@ fn setup_sys(mut commands: Commands, loader: Res<AssetServer>, mut kira: NonSend
 
     // Hold onto the effect handle so that we can exract the samples from it in another system.
     entity.insert(LevelsHandle(monitor_handle));
-    entity.insert(Panning(0.5));
+    entity.insert(Panning(0.0));
     let track_handle = kira
         .add_track(track)
         .expect("Failed to add track to KiraContext");
@@ -166,7 +166,7 @@ fn ui_sys(
         .show(ctx.unwrap(), |ui| {
             ui.horizontal(|ui| {
                 ui.label("Panning");
-                ui.add(egui::Slider::new(&mut panning.0, 0.0..=1.0).text("Panning"));
+                ui.add(egui::Slider::new(&mut panning.0, -1.0..=1.0).text("Panning"));
             });
             // Plot two bars one for left and one for right. Make the heights relative to the left and right levels.
             let left_bar = egui_plot::Bar::new(-0.5, peaks.left as f64);
